@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "DTRPS",
+    "slug": "dtrps-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "supportsTablet": true },
+    "android": { "package": "com.dtrps.mobile" }
+  }
+}
