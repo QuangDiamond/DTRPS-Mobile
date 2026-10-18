@@ -1,6 +1,28 @@
+
 import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
-import { RootNavigator } from './src/navigation/RootNavigator';
-import { FilterProvider } from './src/hooks/useFilterStore';
-export default function App() { return <FilterProvider><NavigationContainer><StatusBar style="dark" /><RootNavigator /></NavigationContainer></FilterProvider>; }
+
+export default function App() {
+  return (
+    <View style={styles.container}>
+      <StatusBar style="dark" />
+      <Text style={styles.title}>DTRPS Mobile</Text>
+      <Text>Travel Discovery & Planning System</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+});
