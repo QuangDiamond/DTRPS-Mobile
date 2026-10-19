@@ -1,28 +1,46 @@
 
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import './global.css';
+
+import React, { useState } from 'react';
+
+import ProfileScreen from './src/screens/profile/ProfileScreen';
+
+import EditProfileScreen, {
+  defaultProfile,
+  type EditableProfile,
+} from './src/screens/profile/EditProfileScreen';
 
 export default function App() {
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [profile, setProfile] = useState<EditableProfile>(
+    defaultProfile
+  );
+
+  // Hiển thị màn Chỉnh sửa hồ sơ
+  if (isEditing) {
+    return (
+      <EditProfileScreen
+        initialProfile={profile}
+        onBack={() => {
+          setIsEditing(false);
+        }}
+        onSave={(updatedProfile) => {
+          setProfile(updatedProfile);
+          setIsEditing(false);
+        }}
+      />
+    );
+  }
+
+  // Hiển thị màn Hồ sơ cá nhân
   return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-      <Text style={styles.title}>DTRPS Mobile</Text>
-      <Text>Travel Discovery & Planning System</Text>
-    </View>
+    <ProfileScreen
+      profileName={profile.name}
+      profileEmail={profile.email}
+      onEditProfilePress={() => {
+        setIsEditing(true);
+      }}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-});
