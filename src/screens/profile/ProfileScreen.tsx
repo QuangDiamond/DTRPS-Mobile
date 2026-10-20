@@ -13,22 +13,18 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import BottomTabBar, {
+  type AppTab,
+} from '../../components/BottomTabBar';
+
 // ==================== TYPES ====================
 
 type IconName =
   React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
-type ProfileTab =
-  | 'home'
-  | 'explore'
-  | 'trips'
-  | 'favorites'
-  | 'profile';
-
-
 type ProfileScreenProps = {
   onEditProfilePress?: () => void;
-  onTabPress?: (tab: ProfileTab) => void;
+  onTabPress?: (tab: AppTab) => void;
   profileName?: string;
   profileEmail?: string;
 };
@@ -204,40 +200,6 @@ function SectionTitle({
   );
 }
 
-// ==================== BOTTOM TABS ====================
-
-const tabs: {
-  id: ProfileTab;
-  label: string;
-  icon: IconName;
-}[] = [
-  {
-    id: 'home',
-    label: 'Trang chủ',
-    icon: 'home-outline',
-  },
-  {
-    id: 'explore',
-    label: 'Khám phá',
-    icon: 'compass-outline',
-  },
-  {
-    id: 'trips',
-    label: 'Chuyến đi',
-    icon: 'bag-suitcase-outline',
-  },
-  {
-    id: 'favorites',
-    label: 'Yêu thích',
-    icon: 'heart-outline',
-  },
-  {
-    id: 'profile',
-    label: 'Hồ sơ',
-    icon: 'account-circle-outline',
-  },
-];
-
 // ==================== MAIN SCREEN ====================
 
 
@@ -264,7 +226,7 @@ export default function ProfileScreen({
     }
   };
 
-  const handleTabPress = (tab: ProfileTab) => {
+  const handleTabPress = (tab: AppTab) => {
     if (tab === 'profile') return;
 
     if (onTabPress) {
@@ -738,49 +700,10 @@ export default function ProfileScreen({
 
       {/* ================= BOTTOM NAVIGATION ================= */}
 
-      <View className="h-[62px] flex-row items-center justify-around border-t border-[#E6E9EE] bg-white px-1">
-
-        {tabs.map((tab) => {
-
-          const selected = tab.id === 'profile';
-
-          return (
-            <Pressable
-              key={tab.id}
-              onPress={() => handleTabPress(tab.id)}
-              className="flex-1 items-center justify-center py-1"
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-            >
-
-              <MaterialCommunityIcons
-                name={tab.icon}
-                size={24}
-                color={
-                  selected ? '#087E78' : '#88939A'
-                }
-              />
-
-              <Text
-                className="mt-0.5 text-[10px]"
-                style={{
-                  color: selected
-                    ? '#087E78'
-                    : '#65747D',
-                  fontWeight: selected
-                    ? '800'
-                    : '600',
-                }}
-              >
-                {tab.label}
-              </Text>
-
-            </Pressable>
-          );
-
-        })}
-
-      </View>
+      <BottomTabBar
+        activeTab="profile"
+        onTabPress={handleTabPress}
+      />
 
     </SafeAreaView>
   );
