@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { OwnerRoute, OwnerScreenProps } from './types';
 
+type LocationPhoto = { id: string; uri: string };
+const MAX_PHOTOS = 10;
 const C = { primary:'#00685F', text:'#131B2E', muted:'#64716F', bg:'#FAF8FF', pale:'#E0F5EF', line:'#E5ECEA', gold:'#D79B00' };
 const titles: Record<OwnerRoute,string> = {
   'Dashboard':'Tổng quan đối tác','My Business Location':'Địa điểm của tôi','Location Details':'Chi tiết địa điểm',
@@ -93,6 +96,66 @@ export function OwnerPage({route,navigate,goBack}:{route:OwnerRoute}&OwnerScreen
     conditions:'Hóa đơn từ 300.000 ₫',reply:'',adTitle:'Khám phá trải nghiệm mới',adDescription:'Ghé thăm địa điểm của chúng tôi.',
     legal:'',registrationPhone:'',registrationName:'',registrationAddress:''
   });
+  // Approved images are deliberately separate from pending local selections.
+  // The real app should hydrate approvedPhotos from the backend.
+  const [approvedPhotos] = useState<LocationPhoto[]>([]);
+  const [draftPhotos, setDraftPhotos] = useState<LocationPhoto[]>([]);
+  const [coverId, setCoverId] = useState<string | null>(null);
+  const [photoRequestPending, setPhotoRequestPending] = useState(false);
+
+  const pickPhotos = async () => {
+    const remaining = MAX_PHOTOS - draftPhotos.length;
+    if (remaining <= 0) {
+      Alert.alert('Đã đạt giới hạn', `Tối đa ${MAX_PHOTOS} ảnh cho một địa điểm.`);
+      return;
+    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.85,
+      });
+      if (result.canceled) return;
+      const assets = result.assets.slice(0, remaining);
+      const accepted = assets.filter(a => {
+        const mime = a.mimeType?.toLowerCase();
+        const extension = a.fileName?.toLowerCase().split('.').pop();
+        return mime ? (mime === 'image/jpeg' || mime === 'image/png') :
+          (extension ? ['jpg','jpeg','png'].includes(extension) : true);
+      });
+      if (accepted.length !== assets.length) {
+        Alert.alert('Định dạng không hỗ trợ', 'Chỉ chọn ảnh JPG hoặc PNG.');
+      }
+      const timestamp = Date.now();
+      const photos = accepted.map((a, index) => ({
+        id: `${timestamp}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+        uri: a.uri,
+      }));
+      setDraftPhotos(old => [...old, ...photos].slice(0, MAX_PHOTOS));
+      if (!coverId && photos.length) setCoverId(photos[0].id);
+      setPhotoRequestPending(false);
+    } catch {
+      Alert.alert('Không thể mở thư viện', 'Kiểm tra quyền truy cập ảnh rồi thử lại.');
+    }
+  };
+
+  const removePhoto = (id: string) => {
+    const next = draftPhotos.filter(p => p.id !== id);
+    setDraftPhotos(next);
+    if (coverId === id) setCoverId(next[0]?.id ?? null);
+    setPhotoRequestPending(false);
+  };
+
+  const submitPhotoRequest = () => {
+    if (!draftPhotos.length) {
+      Alert.alert('Chưa có ảnh', 'Hãy chọn ít nhất một ảnh trước khi gửi.');
+      return;
+    }
+    setPhotoRequestPending(true);
+    Alert.alert('Đã mô phỏng gửi yêu cầu', 'Ảnh chỉ được lưu trong phiên chạy ứng dụng và chưa gửi lên server. Ảnh công khai không thay đổi.');
+  };
+
   const [tags,setTags]=useState<string[]>(['Ăn tại chỗ','Giao hàng','Wi-Fi','Bữa trưa']);
   const [tab,setTab]=useState<'All'|'Pending'|'Resolved'>('All');
   const update=(key:string)=>(value:string)=>setForm(old=>({...old,[key]:value}));
@@ -121,6 +184,21 @@ export function OwnerPage({route,navigate,goBack}:{route:OwnerRoute}&OwnerScreen
       </>;
       case 'Location Details':return <>
         <Heading eyebrow="THÔNG TIN ĐANG CÔNG KHAI" title={form.name} description="Nhà hàng · Hạ Bằng, Hà Nội"/>
+        <Card>
+          <Txt>Hình ảnh địa điểm</Txt>
+          {approvedPhotos.length ? (
+            <View className="mt-3">
+              <Image source={{uri: approvedPhotos[0].uri}} style={{width:'100%',height:190,borderRadius:14}} resizeMode="cover"/>
+              <View className="flex-row flex-wrap mt-2">
+                {approvedPhotos.slice(1).map(photo => <Image key={photo.id} source={{uri:photo.uri}} style={{width:76,height:76,borderRadius:9,marginRight:7,marginBottom:7}}/>)}
+              </View>
+            </View>
+          ) : <View className="rounded-2xl bg-[#F1FAF7] py-8 mt-3 items-center">
+            <I name="image-multiple-outline" size={34}/>
+            <Text className="text-[#64716F] text-[12px] mt-2">Chưa có ảnh được Admin duyệt</Text>
+          </View>}
+          {photoRequestPending ? <View className="mt-3"><Status value="Pending"/></View> : null}
+        </Card>
         <Card><Txt>Thông tin cơ bản</Txt><View className="mt-3">
           <Line label="Địa chỉ" value={form.address}/><Line label="Giờ mở cửa" value={form.hours}/>
           <Line label="Số điện thoại" value={form.phone}/><Line label="Khoảng giá" value={form.price}/><Line label="Mô tả" value={form.description}/>
@@ -131,6 +209,33 @@ export function OwnerPage({route,navigate,goBack}:{route:OwnerRoute}&OwnerScreen
       case 'Edit Location':return <>
         <Heading eyebrow="YÊU CẦU CHỈNH SỬA" title="Chỉnh sửa địa điểm" description="Thông tin mới không thay thế dữ liệu công khai trước khi Admin phê duyệt."/>
         <Card>{field('Tên địa điểm','name')}{field('Loại hình','category')}{field('Địa chỉ','address')}{field('Giờ hoạt động','hours')}{field('Số điện thoại','phone')}{field('Khoảng giá','price')}{field('Mô tả','description',true)}</Card>
+        <Card>
+          <View className="flex-row justify-between items-center mb-3">
+            <Txt>Hình ảnh địa điểm</Txt>
+            <Text className="text-[12px] text-[#64716F]">{draftPhotos.length}/{MAX_PHOTOS} ảnh</Text>
+          </View>
+          <Text className="text-[12px] text-[#64716F] mb-3">Chọn ảnh JPG/PNG, tối đa 10 ảnh. Chạm “Đặt ảnh bìa” để chọn ảnh đại diện.</Text>
+          <View className="flex-row flex-wrap">
+            {draftPhotos.map(photo => (
+              <View key={photo.id} style={{width:'48%',marginRight:'2%',marginBottom:14}}>
+                <Image source={{uri:photo.uri}} style={{width:'100%',height:130,borderRadius:12}} resizeMode="cover"/>
+                {coverId === photo.id ? <View className="absolute top-2 left-2 bg-[#00685F] rounded-full px-2 py-1"><Text className="text-white text-[10px]">Ảnh bìa</Text></View> : null}
+                <Pressable onPress={()=>{setCoverId(photo.id);setPhotoRequestPending(false);}} className="mt-2 rounded-lg bg-[#E5F5F0] p-2 items-center">
+                  <Text className="text-[#00685F] text-[11px] font-bold">{coverId===photo.id?'Đang là ảnh bìa':'Đặt ảnh bìa'}</Text>
+                </Pressable>
+                <Pressable onPress={()=>removePhoto(photo.id)} className="mt-1 p-2 items-center">
+                  <Text className="text-[#B44444] text-[11px] font-bold">Xóa ảnh</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+          <Pressable onPress={pickPhotos} disabled={draftPhotos.length>=MAX_PHOTOS} className="border border-dashed border-[#A4CFC8] bg-[#F1FAF7] rounded-2xl p-5 items-center mb-3">
+            <I name="image-plus-outline" size={28}/>
+            <Text className="text-[#00685F] text-[13px] font-bold mt-2">+ Thêm ảnh từ điện thoại</Text>
+          </Pressable>
+          {photoRequestPending ? <View className="mb-2"><Status value="Pending"/></View> : null}
+          <Button title="Gửi ảnh chờ Admin duyệt" onPress={submitPhotoRequest} disabled={!draftPhotos.length}/>
+        </Card>
         <Button title="Chỉnh sửa dịch vụ & tiện ích" onPress={goto('Manage Service Tags')} secondary/>
         <Notice>Gửi yêu cầu sẽ tạo bản thay đổi chờ duyệt; địa điểm vẫn hiển thị thông tin cũ.</Notice>
         <Button title="Gửi Admin phê duyệt →" onPress={showRequest}/>
