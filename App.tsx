@@ -4,6 +4,9 @@ import ProfileChangePasswordScreen from './src/screens/profile/ProfileChangePass
 
 import React, { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
+
+import SearchFilterScreen from './src/screens/explore/SearchFilterScreen';
+
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -32,10 +35,13 @@ import FavoritesScreen from './src/screens/favorites/FavoritesScreen';
 import type { AppTab } from './src/components/BottomTabBar';
 import type { RootStackParamList } from './src/types/featureRoutes';
 
+
 type AppRoutes = RootStackParamList & {
   MainTabs: { tab?: AppTab } | undefined;
   BusinessOwnerFlow: undefined;
+  HomeSearchFilter: undefined;
 };
+
 
 const Stack = createNativeStackNavigator<AppRoutes>();
 
@@ -272,6 +278,12 @@ export default function App() {
                   tab: 'profile',
                 })
               }
+
+
+              onFilterPress={() => {
+                navigation.navigate('HomeSearchFilter');
+              }}
+
               onPartnerPress={() =>
                 navigation.navigate('BusinessOwnerFlow')
               }
@@ -291,6 +303,31 @@ export default function App() {
             />
           )}
         </Stack.Screen>
+
+
+        {/* ================= SEARCH & FILTER ================= */}
+
+        <Stack.Screen name="HomeSearchFilter">
+          {({ navigation }) => (
+            <SearchFilterScreen
+              onBack={() => {
+                navigation.goBack();
+              }}
+
+              onApplyFilters={() => {
+                // TODO: Kết nối chức năng lọc dữ liệu thật
+                navigation.goBack();
+              }}
+
+              onProfilePress={() => {
+                navigation.navigate('MainTabs', {
+                  tab: 'profile',
+                });
+              }}
+            />
+          )}
+        </Stack.Screen>
+
 
         <Stack.Screen name="MainTabs">
           {({ navigation, route }) => (
