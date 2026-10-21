@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+
   Image,
   ImageBackground,
   Pressable,
@@ -12,6 +13,7 @@ import {
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import SelectedPlacesScreen from './SelectedPlacesScreen';
 
 import {
   getMatchLabel,
@@ -33,6 +35,8 @@ type SuggestionDetailScreenProps = {
   onBack: () => void;
   onToggleFavorite: () => void;
   onTogglePlan: () => void;
+  onViewPlan?: () => void;
+  planCount?: number;
 };
 
 // ==================== COLORS ====================
@@ -60,10 +64,16 @@ export default function SuggestionDetailScreen({
   onBack,
   onToggleFavorite,
   onTogglePlan,
+
+                                                 planCount,
+
 }: SuggestionDetailScreenProps) {
   const { width } = useWindowDimensions();
   const [imageIndex, setImageIndex] = useState(0);
   const [showInfo, setShowInfo] = useState(false);
+
+  const [showSelectedPlaces, setShowSelectedPlaces] = useState(false);
+
 
   const gallery = [place.image, ...place.highlights.map((item) => item.image)];
 
@@ -73,6 +83,20 @@ export default function SuggestionDetailScreen({
     { icon: 'timer-sand', label: 'Thời gian gợi ý', value: place.info.duration },
     { icon: 'weather-sunny', label: 'Thời điểm đẹp nhất', value: place.info.bestTime },
   ];
+
+
+// ==================== SELECTED PLACES ====================
+
+  if (showSelectedPlaces) {
+    return (
+      <SelectedPlacesScreen
+        onBack={() => {
+          setShowSelectedPlaces(false);
+        }}
+      />
+    );
+  }
+
 
   return (
     <SafeAreaView edges={['bottom']} className="flex-1" style={{ backgroundColor: COLORS.white }}>
@@ -281,29 +305,87 @@ export default function SuggestionDetailScreen({
         </View>
       </ScrollView>
 
+
+
+
       {/* ================= FOOTER ================= */}
 
       <View className="bg-white px-4 pb-2 pt-2.5">
+
+        {/* MỚI: Xem danh sách địa điểm đã thêm */}
+
+        <Pressable
+          onPress={() => {
+            setShowSelectedPlaces(true);
+          }}
+          accessibilityRole="button"
+
+          className="mb-2.5 h-12 flex-row items-center justify-center rounded-full border border-[#B8EAE3] bg-[#F0FCF9] active:opacity-80"
+        >
+          <MaterialCommunityIcons
+            name="clipboard-list-outline"
+            size={20}
+            color={COLORS.primaryDark}
+          />
+
+          <Text
+            className="ml-2 text-[14px] font-bold"
+            style={{ color: COLORS.primaryDark }}
+          >
+            Xem kế hoạch của tôi
+            {typeof planCount === 'number'
+              ? ` (${planCount})`
+              : ''}
+          </Text>
+
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={COLORS.primaryDark}
+            style={{ marginLeft: 6 }}
+          />
+        </Pressable>
+
+        {/* GIỮ NGUYÊN: Thêm / Bỏ địa điểm khỏi kế hoạch */}
         <Pressable
           onPress={onTogglePlan}
           className="h-12 flex-row items-center justify-center rounded-full active:opacity-80"
           style={{
-            backgroundColor: inPlan ? COLORS.mint : COLORS.primaryDark,
+            backgroundColor: inPlan
+              ? COLORS.mint
+              : COLORS.primaryDark,
           }}
         >
           <MaterialCommunityIcons
-            name={inPlan ? 'check-circle' : 'map-marker-plus-outline'}
+            name={
+              inPlan
+                ? 'check-circle'
+                : 'map-marker-plus-outline'
+            }
             size={19}
-            color={inPlan ? COLORS.primaryDark : 'white'}
+            color={
+              inPlan
+                ? COLORS.primaryDark
+                : 'white'
+            }
           />
+
           <Text
             className="ml-2 text-[14px] font-bold"
-            style={{ color: inPlan ? COLORS.primaryDark : 'white' }}
+            style={{
+              color: inPlan
+                ? COLORS.primaryDark
+                : 'white',
+            }}
           >
-            {inPlan ? 'Đã thêm vào kế hoạch' : 'Thêm vào kế hoạch'}
+            {inPlan
+              ? 'Đã thêm vào kế hoạch'
+              : 'Thêm vào kế hoạch'}
           </Text>
         </Pressable>
+
       </View>
+
     </SafeAreaView>
   );
 }
