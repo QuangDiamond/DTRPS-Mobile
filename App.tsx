@@ -25,6 +25,9 @@ import EditProfileScreen, {
 } from './src/screens/profile/EditProfileScreen';
 import SettingsScreen from './src/screens/profile/SettingsScreen';
 
+import SearchFilterScreen from './src/screens/explore/SearchFilterScreen';
+
+
 import ExploreScreen from './src/screens/explore/ExploreScreen';
 import PlaceDetailsScreen from './src/screens/explore/PlaceDetailsScreen';
 import FavoritesScreen from './src/screens/favorites/FavoritesScreen';
@@ -44,6 +47,7 @@ import type { RootStackParamList } from './src/types/featureRoutes';
 
 type AppRoutes = RootStackParamList & {
   MainTabs: { tab?: AppTab } | undefined;
+  HomeSearchFilter: undefined;
   BusinessOwnerFlow: undefined;
   TravelPreferences: undefined;
   PlanTrip: undefined;
@@ -312,6 +316,10 @@ export default function App() {
                   tab: 'profile',
                 })
               }
+
+              onFilterPress={() => {
+                navigation.navigate('HomeSearchFilter');
+              }}
               onPartnerPress={() =>
                 navigation.navigate('BusinessOwnerFlow')
               }
@@ -399,6 +407,32 @@ export default function App() {
                     { name: 'Home' },
                     { name: 'MainTabs', params: { tab: 'trips' } },
                   ],
+                });
+              }}
+            />
+          )}
+        </Stack.Screen>
+
+        {/* ================= SEARCH & FILTER ================= */}
+
+        <Stack.Screen name="HomeSearchFilter">
+          {({ navigation }) => (
+            <SearchFilterScreen
+              // Nút quay lại
+              onBack={() => {
+                navigation.goBack();
+              }}
+
+              // Nút Áp dụng bộ lọc
+              onApplyFilters={() => {
+                // Frontend mock: chưa lọc dữ liệu thật
+                navigation.goBack();
+              }}
+
+              // Nút Profile
+              onProfilePress={() => {
+                navigation.navigate('MainTabs', {
+                  tab: 'profile',
                 });
               }}
             />
