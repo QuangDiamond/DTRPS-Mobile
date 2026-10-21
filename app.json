@@ -5,7 +5,14 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "ios": { "supportsTablet": true },
-    "android": { "package": "com.dtrps.mobile" }
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.dtrps.mobile"
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

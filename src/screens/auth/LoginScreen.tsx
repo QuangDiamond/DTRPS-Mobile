@@ -1,0 +1,13 @@
+import React,{useState} from 'react';
+import { View, Text, Pressable, Alert } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import { RootStackParamList } from '../../types/featureRoutes';
+import { Brand, Field, PrimaryButton, LinkText, validEmail } from '../../components/common/UI';
+import { authService } from '../../services/auth';
+import { C } from '../../constants/colors';
+type Props<K extends keyof RootStackParamList>=NativeStackScreenProps<RootStackParamList,K>;
+
+import { Shell, Social } from '../../components/common/AuthLayout';
+
+export function LoginScreen({navigation}:Props<'Login'>){const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[errors,setErrors]=useState<Record<string,string>>({}),[busy,setBusy]=useState(false),[remember,setRemember]=useState(true);const submit=async()=>{const e:Record<string,string>={};if(!validEmail(email))e.email='Nhập địa chỉ email hợp lệ';if(!password)e.password='Vui lòng nhập mật khẩu';setErrors(e);if(Object.keys(e).length)return;setBusy(true);try{await authService.login({email:email.trim(),password})}catch(err){Alert.alert('Chưa kết nối backend',String((err as Error).message))}finally{setBusy(false)}};return <Shell back={()=>navigation.goBack()}><View className="mt-2"><Brand/><View className="bg-[#E7FAF6] rounded-2xl p-4 mb-6"><Text className="text-[#00756F] text-[11px] font-bold">AI Curated Journey</Text><Text className="font-extrabold text-[#1B3845] text-[17px] mt-1">Chào mừng trở lại! 👋</Text><Text className="text-[#647784] text-[12px] mt-1">Đăng nhập để tiếp tục hành trình khám phá Việt Nam cùng lịch trình thông minh của bạn.</Text></View><Field label="Email hoặc Số điện thoại" placeholder="Nhập email" keyboardType="email-address" value={email} onChangeText={setEmail} error={errors.email}/><Field label="Mật khẩu" placeholder="Nhập mật khẩu" secure value={password} onChangeText={setPassword} error={errors.password}/><View className="flex-row items-center justify-between mb-5"><Pressable onPress={()=>setRemember(!remember)} className="flex-row items-center"><Icon name={remember?'checkbox-marked':'checkbox-blank-outline'} size={20} color={C.primary}/><Text className="text-[12px] text-[#5C6D79] ml-1">Ghi nhớ đăng nhập</Text></Pressable><Pressable onPress={()=>navigation.navigate('ForgotPassword')}><Text className="text-[12px] font-bold text-[#007E78]">Quên mật khẩu?</Text></Pressable></View><PrimaryButton title="Đăng nhập" onPress={submit} loading={busy}/><Social/><LinkText title="Chưa có tài khoản? Tạo tài khoản ngay ›" onPress={()=>navigation.navigate('Registration')}/></View></Shell>}

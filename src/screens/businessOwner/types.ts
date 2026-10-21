@@ -1,0 +1,26 @@
+export type OwnerRoute =
+  | 'Dashboard'
+  | 'My Business Location'
+  | 'Location Details'
+  | 'Edit Location'
+  | 'Manage Service Tags'
+  | 'Location Change Request Details'
+  | 'Price / Promotion Management'
+  | 'Promotion Details'
+  | 'Create / Edit Promotion'
+  | 'Review Management'
+  | 'Review Details'
+  | 'Feedback Management'
+  | 'Feedback Details'
+  | 'Business Owner Profile'
+  | 'Edit Business Owner Profile'
+  | 'Become Business Owner'
+  | 'Business Owner Application'
+  | 'Application Status'
+  | 'Subscription Management'
+  | 'Subscription Renewal / Payment'
+  | 'Advertisement Management'
+  | 'Create / Edit Advertisement'
+  | 'Advertisement Details / Approval Status';
+
+export type OwnerScreenProps = { navigate: (route: OwnerRoute) => void; goBack: () => void; };
