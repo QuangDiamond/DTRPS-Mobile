@@ -1,3 +1,4 @@
+
 import './global.css';
 
 import React, { useState } from 'react';
@@ -9,6 +10,9 @@ import EditProfileScreen, {
   defaultProfile,
   type EditableProfile,
 } from './src/screens/profile/EditProfileScreen';
+
+// MỚI: Import màn Settings
+import SettingsScreen from './src/screens/profile/SettingsScreen';
 
 import ExploreScreen from './src/screens/explore/ExploreScreen';
 
@@ -23,12 +27,14 @@ export default function App() {
 
   const [isEditing, setIsEditing] = useState(false);
 
-  // Địa điểm đang xem chi tiết (null = đang ở danh sách Khám phá)
-  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(
-    null
-  );
+  // MỚI: Trạng thái mở màn Settings
+  const [isSettings, setIsSettings] = useState(false);
 
-  // Dữ liệu mẫu: vài địa điểm đã lưu sẵn để màn Yêu thích có nội dung
+  // Địa điểm đang xem chi tiết
+  const [selectedPlaceId, setSelectedPlaceId] =
+    useState<string | null>(null);
+
+  // Danh sách địa điểm yêu thích
   const [favorites, setFavorites] = useState<string[]>([
     'ba-na',
     'hoi-an',
@@ -43,21 +49,33 @@ export default function App() {
     );
   };
 
-  const [profile, setProfile] = useState<EditableProfile>(
-    defaultProfile
-  );
+  // Thông tin hồ sơ hardcode
+  const [profile, setProfile] =
+    useState<EditableProfile>(defaultProfile);
 
-  // Chỉ có màn Hồ sơ, Khám phá và Yêu thích, các tab khác chưa làm
+  // Chuyển tab
   const handleTabPress = (tab: AppTab) => {
-    if (tab === 'profile' || tab === 'explore' || tab === 'favorites') {
+    if (
+      tab === 'profile' ||
+      tab === 'explore' ||
+      tab === 'favorites'
+    ) {
       setSelectedPlaceId(null);
       setActiveTab(tab);
+
+      // MỚI: Đóng các màn phụ khi chuyển tab
+      setIsSettings(false);
+      setIsEditing(false);
     } else {
-      Alert.alert('Điều hướng', 'Chức năng đang được phát triển.');
+      Alert.alert(
+        'Điều hướng',
+        'Chức năng đang được phát triển.'
+      );
     }
   };
 
-  // Hiển thị màn Khám phá / Yêu thích (+ màn Chi tiết đè lên trên để giữ trạng thái danh sách)
+  // ==================== EXPLORE / FAVORITES ====================
+
   if (activeTab === 'explore' || activeTab === 'favorites') {
     return (
       <View style={{ flex: 1 }}>
@@ -82,9 +100,13 @@ export default function App() {
             <PlaceDetailsScreen
               placeId={selectedPlaceId}
               favorite={favorites.includes(selectedPlaceId)}
-              onToggleFavorite={() => toggleFavorite(selectedPlaceId)}
+              onToggleFavorite={() =>
+                toggleFavorite(selectedPlaceId)
+              }
               onBack={() => setSelectedPlaceId(null)}
-              onProfilePress={() => handleTabPress('profile')}
+              onProfilePress={() =>
+                handleTabPress('profile')
+              }
             />
           </View>
         )}
@@ -92,7 +114,8 @@ export default function App() {
     );
   }
 
-  // Hiển thị màn Chỉnh sửa hồ sơ
+  // ==================== EDIT PROFILE ====================
+
   if (isEditing) {
     return (
       <EditProfileScreen
@@ -108,7 +131,78 @@ export default function App() {
     );
   }
 
-  // Hiển thị màn Hồ sơ cá nhân
+  // ==================== SETTINGS SCREEN ====================
+  // MỚI: Toàn bộ phần này
+
+  if (isSettings) {
+    return (
+      <SettingsScreen
+        onBackPress={() => {
+          setIsSettings(false);
+        }}
+
+        onEditProfilePress={() => {
+          setIsEditing(true);
+        }}
+
+        onMyTripsPress={() => {
+          handleTabPress('trips');
+        }}
+
+        onFavoritePlacesPress={() => {
+          handleTabPress('favorites');
+        }}
+
+        onNotificationsPress={() => {
+          Alert.alert(
+            'Thông báo',
+            'Chức năng đang được phát triển.'
+          );
+        }}
+
+        onAppSettingsPress={() => {
+          Alert.alert(
+            'Cài đặt ứng dụng',
+            'Chức năng đang được phát triển.'
+          );
+        }}
+
+        onLogoutPress={() => {
+          Alert.alert(
+            'Đăng xuất',
+            'Bạn có chắc chắn muốn đăng xuất?',
+            [
+              { text: 'Hủy', style: 'cancel' },
+              {
+                text: 'Đăng xuất',
+                style: 'destructive',
+                onPress: () => {
+                  Alert.alert(
+                    'Thông báo',
+                    'Chức năng đăng xuất sẽ được tích hợp sau.'
+                  );
+                },
+              },
+            ]
+          );
+        }}
+
+        onTabPress={(tab) => {
+          // SettingsScreen dùng tên tab khác BottomTabBar
+          if (tab === 'favorite') {
+            handleTabPress('favorites');
+          } else if (tab === 'trip') {
+            handleTabPress('trips');
+          } else {
+            handleTabPress(tab);
+          }
+        }}
+      />
+    );
+  }
+
+  // ==================== PROFILE SCREEN ====================
+
   return (
     <ProfileScreen
       profileName={profile.name}
@@ -116,6 +210,11 @@ export default function App() {
       onTabPress={handleTabPress}
       onEditProfilePress={() => {
         setIsEditing(true);
+      }}
+
+      // MỚI: Nhấn Cài đặt để mở SettingsScreen
+      onSettingsPress={() => {
+        setIsSettings(true);
       }}
     />
   );
