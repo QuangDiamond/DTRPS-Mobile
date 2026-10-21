@@ -1,5 +1,6 @@
 
 import './global.css';
+import ProfileChangePasswordScreen from './src/screens/profile/ProfileChangePasswordScreen';
 
 import React, { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
@@ -48,6 +49,7 @@ function MainTabsScreen({
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [isEditing, setIsEditing] = useState(false);
   const [isSettings, setIsSettings] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const [selectedPlaceId, setSelectedPlaceId] =
     useState<string | null>(null);
@@ -132,6 +134,18 @@ function MainTabsScreen({
     );
   }
 
+
+// ==================== CHANGE PASSWORD ====================
+
+  if (isChangingPassword) {
+    return (
+      <ProfileChangePasswordScreen
+        onBack={() => setIsChangingPassword(false)}
+      />
+    );
+  }
+
+
   // Edit Profile
   if (isEditing) {
     return (
@@ -208,6 +222,7 @@ function MainTabsScreen({
       onTabPress={handleTabPress}
       onEditProfilePress={() => setIsEditing(true)}
       onSettingsPress={() => setIsSettings(true)}
+      onChangePasswordPress={() => setIsChangingPassword(true)}
     />
   );
 }
