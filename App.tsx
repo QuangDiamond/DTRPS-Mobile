@@ -28,6 +28,16 @@ import SettingsScreen from './src/screens/profile/SettingsScreen';
 import ExploreScreen from './src/screens/explore/ExploreScreen';
 import PlaceDetailsScreen from './src/screens/explore/PlaceDetailsScreen';
 import FavoritesScreen from './src/screens/favorites/FavoritesScreen';
+import MyTripsScreen from './src/screens/trips/MyTripsScreen';
+import AddLocationScreen from './src/screens/trips/AddLocationScreen';
+import TravelPreferencesScreen from './src/screens/preferences/TravelPreferencesScreen';
+import PlanTripScreen from './src/screens/trips/PlanTripScreen';
+import GeneratingTripScreen from './src/screens/trips/GeneratingTripScreen';
+import SuggestedPlacesScreen from './src/screens/trips/SuggestedPlacesScreen';
+import {
+  emptyPreferences,
+  type TravelPreferences,
+} from './src/constants/travelPreferences';
 
 import type { AppTab } from './src/components/BottomTabBar';
 import type { RootStackParamList } from './src/types/featureRoutes';
@@ -35,6 +45,10 @@ import type { RootStackParamList } from './src/types/featureRoutes';
 type AppRoutes = RootStackParamList & {
   MainTabs: { tab?: AppTab } | undefined;
   BusinessOwnerFlow: undefined;
+  TravelPreferences: undefined;
+  PlanTrip: undefined;
+  GeneratingTrip: { destinationId: string; days: number; interests: string[] };
+  SuggestedPlaces: { destinationId: string; interests: string[] };
 };
 
 const Stack = createNativeStackNavigator<AppRoutes>();
@@ -50,6 +64,7 @@ function MainTabsScreen({
   const [isEditing, setIsEditing] = useState(false);
   const [isSettings, setIsSettings] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isAddingLocation, setIsAddingLocation] = useState(false);
 
   const [selectedPlaceId, setSelectedPlaceId] =
     useState<string | null>(null);
@@ -80,11 +95,14 @@ function MainTabsScreen({
     if (
       tab === 'profile' ||
       tab === 'explore' ||
-      tab === 'favorites'
+      tab === 'favorites' ||
+      tab === 'trips'
     ) {
       setSelectedPlaceId(null);
       setIsEditing(false);
       setIsSettings(false);
+      setIsChangingPassword(false);
+      setIsAddingLocation(false);
       setActiveTab(tab);
       return;
     }
@@ -94,6 +112,24 @@ function MainTabsScreen({
       'Chức năng đang được phát triển.'
     );
   };
+
+  // Chuyến đi của tôi
+  if (activeTab === 'trips') {
+    if (isAddingLocation) {
+      return (
+        <AddLocationScreen
+          onBack={() => setIsAddingLocation(false)}
+        />
+      );
+    }
+
+    return (
+      <MyTripsScreen
+        onTabPress={handleTabPress}
+        onCreateTripPress={() => setIsAddingLocation(true)}
+      />
+    );
+  }
 
   // Explore và Favorites
   if (activeTab === 'explore' || activeTab === 'favorites') {
@@ -228,6 +264,10 @@ function MainTabsScreen({
 }
 
 export default function App() {
+  // Sở thích du lịch của người dùng (chưa có backend nên lưu tạm ở đây)
+  const [travelPreferences, setTravelPreferences] =
+    useState<TravelPreferences>(emptyPreferences);
+
   return (
     <NavigationContainer>
       <Stack.Navigator
@@ -275,18 +315,91 @@ export default function App() {
               onPartnerPress={() =>
                 navigation.navigate('BusinessOwnerFlow')
               }
+              onSetupPreferencesPress={() =>
+                navigation.navigate('TravelPreferences')
+              }
+              onPlanTripPress={() => navigation.navigate('PlanTrip')}
               onTabPress={tab => {
                 if (tab === 'home') return;
 
-                if (tab === 'trips') {
-                  Alert.alert(
-                    'Chuyến đi',
-                    'Chức năng đang được phát triển.'
-                  );
-                  return;
-                }
-
                 navigation.navigate('MainTabs', { tab });
+              }}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="TravelPreferences">
+          {({ navigation }) => (
+            <TravelPreferencesScreen
+              initialPreferences={travelPreferences}
+              onBack={() => navigation.goBack()}
+              onComplete={preferences => {
+                setTravelPreferences(preferences);
+                Alert.alert(
+                  'Đã lưu sở thích',
+                  'SmartTravel sẽ gợi ý điểm đến và lịch trình phù hợp hơn với bạn.'
+                );
+                navigation.goBack();
+              }}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="PlanTrip">
+          {({ navigation }) => (
+            <PlanTripScreen
+              preferences={travelPreferences}
+              onBack={() => navigation.goBack()}
+              onSubmit={plan =>
+                navigation.navigate('GeneratingTrip', {
+                  destinationId: plan.destinationId,
+                  days: plan.days,
+                  interests: plan.interests,
+                })
+              }
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen
+          name="GeneratingTrip"
+          options={{ gestureEnabled: false }}
+        >
+          {({ navigation, route }) => (
+            <GeneratingTripScreen
+              destinationId={route.params.destinationId}
+              days={route.params.days}
+              onCancel={() => navigation.goBack()}
+              // Thay màn Đang tạo bằng màn Gợi ý để nút Back quay về Lập kế hoạch
+              onDone={() =>
+                navigation.replace('SuggestedPlaces', {
+                  destinationId: route.params.destinationId,
+                  interests: route.params.interests,
+                })
+              }
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="SuggestedPlaces">
+          {({ navigation, route }) => (
+            <SuggestedPlacesScreen
+              destinationId={route.params.destinationId}
+              interests={route.params.interests}
+              onBack={() => navigation.goBack()}
+              onSavePlan={placeIds => {
+                Alert.alert(
+                  'Đã lưu kế hoạch',
+                  `Đã thêm ${placeIds.length} địa điểm vào chuyến đi của bạn.`
+                );
+                // Bỏ các màn lập kế hoạch khỏi lịch sử
+                navigation.reset({
+                  index: 1,
+                  routes: [
+                    { name: 'Home' },
+                    { name: 'MainTabs', params: { tab: 'trips' } },
+                  ],
+                });
               }}
             />
           )}
