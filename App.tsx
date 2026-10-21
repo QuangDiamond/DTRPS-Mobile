@@ -28,6 +28,8 @@ import SettingsScreen from './src/screens/profile/SettingsScreen';
 import ExploreScreen from './src/screens/explore/ExploreScreen';
 import PlaceDetailsScreen from './src/screens/explore/PlaceDetailsScreen';
 import FavoritesScreen from './src/screens/favorites/FavoritesScreen';
+import MyTripsScreen from './src/screens/trips/MyTripsScreen';
+import AddLocationScreen from './src/screens/trips/AddLocationScreen';
 
 import type { AppTab } from './src/components/BottomTabBar';
 import type { RootStackParamList } from './src/types/featureRoutes';
@@ -50,6 +52,7 @@ function MainTabsScreen({
   const [isEditing, setIsEditing] = useState(false);
   const [isSettings, setIsSettings] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isAddingLocation, setIsAddingLocation] = useState(false);
 
   const [selectedPlaceId, setSelectedPlaceId] =
     useState<string | null>(null);
@@ -80,11 +83,14 @@ function MainTabsScreen({
     if (
       tab === 'profile' ||
       tab === 'explore' ||
-      tab === 'favorites'
+      tab === 'favorites' ||
+      tab === 'trips'
     ) {
       setSelectedPlaceId(null);
       setIsEditing(false);
       setIsSettings(false);
+      setIsChangingPassword(false);
+      setIsAddingLocation(false);
       setActiveTab(tab);
       return;
     }
@@ -94,6 +100,24 @@ function MainTabsScreen({
       'Chức năng đang được phát triển.'
     );
   };
+
+  // Chuyến đi của tôi
+  if (activeTab === 'trips') {
+    if (isAddingLocation) {
+      return (
+        <AddLocationScreen
+          onBack={() => setIsAddingLocation(false)}
+        />
+      );
+    }
+
+    return (
+      <MyTripsScreen
+        onTabPress={handleTabPress}
+        onCreateTripPress={() => setIsAddingLocation(true)}
+      />
+    );
+  }
 
   // Explore và Favorites
   if (activeTab === 'explore' || activeTab === 'favorites') {
@@ -277,14 +301,6 @@ export default function App() {
               }
               onTabPress={tab => {
                 if (tab === 'home') return;
-
-                if (tab === 'trips') {
-                  Alert.alert(
-                    'Chuyến đi',
-                    'Chức năng đang được phát triển.'
-                  );
-                  return;
-                }
 
                 navigation.navigate('MainTabs', { tab });
               }}
