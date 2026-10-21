@@ -18,6 +18,7 @@ import {
   suggestedPlaces,
 } from '../../constants/homeData';
 import BottomTabBar, { type AppTab } from '../../components/BottomTabBar';
+import AppLogo from '../../components/AppLogo';
 const C = {
   primary: '#00685F',
   teal: '#008378',
@@ -167,19 +168,7 @@ export default function HomeScreen({
     >
       {/* Bottom tab navigation intentionally belongs to the team's navigator. */}
       <View className="h-16 flex-row items-center justify-between bg-[#FAF8FF] px-4">
-        <View className="flex-row items-center">
-          <View className="h-10 w-10 items-center justify-center rounded-2xl bg-teal-600">
-            <Icon name="earth" size={24} color="white" />
-          </View>
-          <View className="ml-2">
-            <Text className="text-[16px] font-extrabold" style={{ color: C.text }}>
-              Smart<Text style={{ color: C.teal }}>Travel</Text>
-            </Text>
-            <Text className="text-[9px] font-semibold tracking-widest" style={{ color: C.primary }}>
-              VIETNAM AI PLANNER
-            </Text>
-          </View>
-        </View>
+        <AppLogo />
         <View className="flex-row items-center gap-2">
           <Pressable className="rounded-full bg-[#EAEDFF] px-2 py-1">
             <Text className="text-[11px] font-bold" style={{ color: C.primary }}>
