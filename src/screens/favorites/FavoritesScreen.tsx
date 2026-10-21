@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomTabBar, {
   type AppTab,
 } from '../../components/BottomTabBar';
+import AppLogo from '../../components/AppLogo';
 
 import {
   places,
@@ -345,34 +346,7 @@ export default function FavoritesScreen({
       {/* ================= HEADER ================= */}
 
       <View className="h-[65px] flex-row items-center justify-between bg-white px-4">
-        <View className="flex-row items-center">
-          <View
-            className="h-10 w-10 items-center justify-center rounded-2xl"
-            style={{ backgroundColor: '#5CACA7' }}
-          >
-            <MaterialCommunityIcons
-              name="compass-outline"
-              size={25}
-              color="white"
-            />
-          </View>
-
-          <View className="ml-2.5">
-            <Text
-              className="text-[19px] font-extrabold"
-              style={{ color: '#518E88' }}
-            >
-              SmartTravel
-            </Text>
-
-            <Text
-              className="text-[10px] font-extrabold tracking-[1px]"
-              style={{ color: '#4FA6A1' }}
-            >
-              YÊU THÍCH
-            </Text>
-          </View>
-        </View>
+        <AppLogo />
 
         <View className="flex-row items-center gap-4">
           <Pressable onPress={() => showComingSoon('Thông báo')}>

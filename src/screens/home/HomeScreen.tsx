@@ -18,6 +18,7 @@ import {
   suggestedPlaces,
 } from '../../constants/homeData';
 import BottomTabBar, { type AppTab } from '../../components/BottomTabBar';
+import AppLogo from '../../components/AppLogo';
 const C = {
   primary: '#00685F',
   teal: '#008378',
@@ -42,6 +43,9 @@ export type HomeScreenProps = {
 
   // Điều hướng đến Business Owner
   onPartnerPress?: () => void;
+
+  // Mở màn Sở thích du lịch
+  onSetupPreferencesPress?: () => void;
 };
 function ActionIcon({
   name,
@@ -140,7 +144,7 @@ export default function HomeScreen({
   onPlanTripPress,
   onDestinationPress,
   onViewAllPress,
-  
+  onSetupPreferencesPress,
 }: HomeScreenProps) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Tất cả');
@@ -167,19 +171,7 @@ export default function HomeScreen({
     >
       {/* Bottom tab navigation intentionally belongs to the team's navigator. */}
       <View className="h-16 flex-row items-center justify-between bg-[#FAF8FF] px-4">
-        <View className="flex-row items-center">
-          <View className="h-10 w-10 items-center justify-center rounded-2xl bg-teal-600">
-            <Icon name="earth" size={24} color="white" />
-          </View>
-          <View className="ml-2">
-            <Text className="text-[16px] font-extrabold" style={{ color: C.text }}>
-              Smart<Text style={{ color: C.teal }}>Travel</Text>
-            </Text>
-            <Text className="text-[9px] font-semibold tracking-widest" style={{ color: C.primary }}>
-              VIETNAM AI PLANNER
-            </Text>
-          </View>
-        </View>
+        <AppLogo />
         <View className="flex-row items-center gap-2">
           <Pressable className="rounded-full bg-[#EAEDFF] px-2 py-1">
             <Text className="text-[11px] font-bold" style={{ color: C.primary }}>
@@ -383,6 +375,36 @@ export default function HomeScreen({
               <DestinationCard key={item.id} item={item} onPress={onDestinationPress} />
             ))}
           </ScrollView>
+        </View>
+
+        {/* Hoàn thiện sở thích du lịch */}
+        <View
+          className="mx-4 mt-5 rounded-2xl bg-white p-4"
+          style={{ elevation: 2 }}
+        >
+          <View className="flex-row items-center">
+            <View className="flex-1 pr-3">
+              <Text className="text-[14px] font-bold" style={{ color: C.text }}>
+                Hoàn thiện sở thích du lịch
+              </Text>
+              <Text className="mt-1 text-[12px]" style={{ color: C.muted }}>
+                để nhận gợi ý phù hợp hơn
+              </Text>
+            </View>
+            <View className="h-16 w-20 items-center justify-center rounded-2xl bg-[#E3F7F3]">
+              <Icon name="map-marker-radius-outline" size={30} color={C.teal} />
+              <View className="absolute right-2 top-2">
+                <Icon name="star-four-points" size={12} color="#F5B53F" />
+              </View>
+            </View>
+          </View>
+          <Pressable
+            onPress={onSetupPreferencesPress}
+            className="mt-3 h-11 items-center justify-center rounded-full active:opacity-80"
+            style={{ backgroundColor: C.primary }}
+          >
+            <Text className="text-[13px] font-bold text-white">Thiết lập sở thích</Text>
+          </Pressable>
         </View>
       </ScrollView>
 
