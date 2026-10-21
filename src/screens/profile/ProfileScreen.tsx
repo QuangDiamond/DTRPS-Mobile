@@ -22,12 +22,16 @@ import BottomTabBar, {
 type IconName =
   React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
+
 type ProfileScreenProps = {
   onEditProfilePress?: () => void;
+  onSettingsPress?: () => void;
+  onChangePasswordPress?: () => void;
   onTabPress?: (tab: AppTab) => void;
   profileName?: string;
   profileEmail?: string;
 };
+
 
 
 // ==================== COLORS ====================
@@ -203,12 +207,18 @@ function SectionTitle({
 // ==================== MAIN SCREEN ====================
 
 
+
+
 export default function ProfileScreen({
                                         onEditProfilePress,
+                                        onSettingsPress,
+                                        onChangePasswordPress,
                                         onTabPress,
                                         profileName,
                                         profileEmail,
                                       }: ProfileScreenProps) {
+
+
 
 
   const showComingSoon = (title: string) => {
@@ -225,6 +235,16 @@ export default function ProfileScreen({
       showComingSoon('Chỉnh sửa hồ sơ');
     }
   };
+
+
+  const handleChangePassword = () => {
+    if (onChangePasswordPress) {
+      onChangePasswordPress();
+    } else {
+      showComingSoon('Đổi mật khẩu');
+    }
+  };
+
 
   const handleTabPress = (tab: AppTab) => {
     if (tab === 'profile') return;
@@ -625,30 +645,30 @@ export default function ProfileScreen({
 
         </View>
 
+
         {/* ================= SETTINGS ================= */}
 
         <SectionTitle title="CÀI ĐẶT & TIỆN ÍCH" />
 
         <View className="overflow-hidden rounded-[20px] bg-white">
 
+          {/* Bảo mật tài khoản - Đổi mật khẩu */}
+          <MenuItem
+            icon="shield-lock-outline"
+            title="Bảo mật tài khoản"
+            subtitle="Đổi mật khẩu đăng nhập"
+            onPress={handleChangePassword}
+          />
+
+          {/* Cài đặt ứng dụng */}
           <MenuItem
             icon="tune-variant"
             title="Cài đặt ứng dụng"
-            subtitle="Ngôn ngữ, tiền tệ, quyền riêng tư"
-            onPress={() =>
-              showComingSoon('Cài đặt ứng dụng')
-            }
+            subtitle="Ngôn ngữ, giao diện, âm thanh"
+            onPress={() => onSettingsPress?.()}
           />
 
-          <MenuItem
-            icon="download-circle-outline"
-            title="Bản đồ ngoại tuyến & Tải về"
-            subtitle="Đã lưu: Hà Giang, Ninh Bình"
-            onPress={() =>
-              showComingSoon('Bản đồ ngoại tuyến')
-            }
-          />
-
+          {/* Trợ giúp & Hỗ trợ */}
           <MenuItem
             icon="face-agent"
             title="Trợ giúp & Hỗ trợ"
@@ -661,6 +681,7 @@ export default function ProfileScreen({
           />
 
         </View>
+
 
         {/* ================= LOGOUT ================= */}
 
