@@ -30,6 +30,11 @@ import PlaceDetailsScreen from './src/screens/explore/PlaceDetailsScreen';
 import FavoritesScreen from './src/screens/favorites/FavoritesScreen';
 import MyTripsScreen from './src/screens/trips/MyTripsScreen';
 import AddLocationScreen from './src/screens/trips/AddLocationScreen';
+import TravelPreferencesScreen from './src/screens/preferences/TravelPreferencesScreen';
+import {
+  emptyPreferences,
+  type TravelPreferences,
+} from './src/constants/travelPreferences';
 
 import type { AppTab } from './src/components/BottomTabBar';
 import type { RootStackParamList } from './src/types/featureRoutes';
@@ -37,6 +42,7 @@ import type { RootStackParamList } from './src/types/featureRoutes';
 type AppRoutes = RootStackParamList & {
   MainTabs: { tab?: AppTab } | undefined;
   BusinessOwnerFlow: undefined;
+  TravelPreferences: undefined;
 };
 
 const Stack = createNativeStackNavigator<AppRoutes>();
@@ -252,6 +258,10 @@ function MainTabsScreen({
 }
 
 export default function App() {
+  // Sở thích du lịch của người dùng (chưa có backend nên lưu tạm ở đây)
+  const [travelPreferences, setTravelPreferences] =
+    useState<TravelPreferences>(emptyPreferences);
+
   return (
     <NavigationContainer>
       <Stack.Navigator
@@ -299,10 +309,30 @@ export default function App() {
               onPartnerPress={() =>
                 navigation.navigate('BusinessOwnerFlow')
               }
+              onSetupPreferencesPress={() =>
+                navigation.navigate('TravelPreferences')
+              }
               onTabPress={tab => {
                 if (tab === 'home') return;
 
                 navigation.navigate('MainTabs', { tab });
+              }}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="TravelPreferences">
+          {({ navigation }) => (
+            <TravelPreferencesScreen
+              initialPreferences={travelPreferences}
+              onBack={() => navigation.goBack()}
+              onComplete={preferences => {
+                setTravelPreferences(preferences);
+                Alert.alert(
+                  'Đã lưu sở thích',
+                  'SmartTravel sẽ gợi ý điểm đến và lịch trình phù hợp hơn với bạn.'
+                );
+                navigation.goBack();
               }}
             />
           )}
