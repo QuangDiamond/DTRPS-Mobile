@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import ItineraryOverviewScreen from '../trips/ItineraryOverviewScreen';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -241,6 +242,8 @@ export default function SelectedPlacesScreen({
 
   const [places, setPlaces] =
     useState<PlanPlace[]>(MOCK_PLACES);
+  const [showItineraryOverview, setShowItineraryOverview] =
+    useState(false);
 
   const selectedCount = places.length;
 
@@ -284,26 +287,39 @@ export default function SelectedPlacesScreen({
     );
   };
 
-  // Tiếp tục tạo lịch trình (demo)
+
   const handleContinue = () => {
     if (selectedCount === 0) {
       Alert.alert(
         'Chưa có địa điểm',
-        'Hãy thêm ít nhất một địa điểm vào kế hoạch.'
+        'Vui lòng chọn ít nhất một địa điểm để tạo lịch trình.'
       );
       return;
     }
 
-    Alert.alert(
-      'Tạo lịch trình',
-      `Bạn đã chọn ${selectedCount} địa điểm. Chức năng tạo lịch trình sẽ được tích hợp sau.`
-    );
+    // Chuyển sang màn Lịch trình của bạn
+    setShowItineraryOverview(true);
   };
 
-  // ==================== RENDER ====================
+
+
+// ==================== MỞ MÀN LỊCH TRÌNH ====================
+
+  if (showItineraryOverview) {
+    return (
+      <ItineraryOverviewScreen
+        onBack={() => {
+          setShowItineraryOverview(false);
+        }}
+      />
+    );
+  }
+
+// ==================== RENDER ====================
 
   return (
     <SafeAreaView
+
       edges={['top', 'bottom']}
       className="flex-1"
       style={{
