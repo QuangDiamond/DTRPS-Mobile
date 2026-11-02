@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomTabBar, {
   type AppTab,
 } from '../../components/BottomTabBar';
-import AppLogo from '../../components/AppLogo';
+import AppHeader from '../../components/AppHeader';
 
 import {
   places,
@@ -35,7 +35,6 @@ type FavoritesScreenProps = {
   onToggleFavorite: (placeId: string) => void;
   onPlacePress?: (placeId: string) => void;
   onTabPress?: (tab: AppTab) => void;
-  onAddToTrip?: (placeId: string) => void;
   onCreateTrip?: (placeIds: string[]) => void;
 };
 
@@ -75,12 +74,10 @@ function FavoriteCard({
   place,
   onRemove,
   onPress,
-  onAddToTrip,
 }: {
   place: Place;
   onRemove: () => void;
   onPress: () => void;
-  onAddToTrip: () => void;
 }) {
   return (
     <View className="mb-4 overflow-hidden rounded-[22px] bg-white">
@@ -184,35 +181,18 @@ function FavoriteCard({
         </View>
 
         {/* Nút */}
-        <View className="mt-3 flex-row gap-2.5">
-          <Pressable
-            onPress={onPress}
-            className="h-11 flex-1 items-center justify-center rounded-2xl active:opacity-70"
-            style={{ backgroundColor: COLORS.lightPurple }}
+        <Pressable
+          onPress={onPress}
+          className="mt-3 h-11 items-center justify-center rounded-2xl active:opacity-70"
+          style={{ backgroundColor: COLORS.lightPurple }}
+        >
+          <Text
+            className="text-[13px] font-bold"
+            style={{ color: COLORS.text }}
           >
-            <Text
-              className="text-[13px] font-bold"
-              style={{ color: COLORS.text }}
-            >
-              Xem chi tiết
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={onAddToTrip}
-            className="h-11 flex-1 flex-row items-center justify-center rounded-2xl active:opacity-80"
-            style={{ backgroundColor: COLORS.primaryDark }}
-          >
-            <MaterialCommunityIcons
-              name="plus"
-              size={18}
-              color="white"
-            />
-            <Text className="ml-1 text-[13px] font-bold text-white">
-              Thêm vào Chuyến đi
-            </Text>
-          </Pressable>
-        </View>
+            Xem chi tiết
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -225,7 +205,6 @@ export default function FavoritesScreen({
   onToggleFavorite,
   onPlacePress,
   onTabPress,
-  onAddToTrip,
   onCreateTrip,
 }: FavoritesScreenProps) {
   const [category, setCategory] = useState<CategoryId>('all');
@@ -313,17 +292,6 @@ export default function FavoritesScreen({
     }
   };
 
-  const handleAddToTrip = (place: Place) => {
-    if (onAddToTrip) {
-      onAddToTrip(place.id);
-    } else {
-      Alert.alert(
-        'Thêm vào Chuyến đi',
-        `Đã thêm "${place.name}" vào chuyến đi của bạn.`
-      );
-    }
-  };
-
   const handleCreateTrip = () => {
     if (onCreateTrip) {
       onCreateTrip(savedPlaces.map((place) => place.id));
@@ -345,31 +313,10 @@ export default function FavoritesScreen({
 
       {/* ================= HEADER ================= */}
 
-      <View className="h-[65px] flex-row items-center justify-between bg-white px-4">
-        <AppLogo />
-
-        <View className="flex-row items-center gap-4">
-          <Pressable onPress={() => showComingSoon('Thông báo')}>
-            <MaterialCommunityIcons
-              name="bell-outline"
-              size={23}
-              color="#8C989E"
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleTabPress('profile')}
-            className="h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: '#62AAA4' }}
-          >
-            <MaterialCommunityIcons
-              name="account"
-              size={22}
-              color="white"
-            />
-          </Pressable>
-        </View>
-      </View>
+      <AppHeader
+        onNotificationPress={() => showComingSoon('Thông báo')}
+        onProfilePress={() => handleTabPress('profile')}
+      />
 
       <ScrollView
         className="flex-1"
@@ -514,7 +461,6 @@ export default function FavoritesScreen({
               place={place}
               onRemove={() => handleRemove(place)}
               onPress={() => handlePlacePress(place.id)}
-              onAddToTrip={() => handleAddToTrip(place)}
             />
           ))}
 

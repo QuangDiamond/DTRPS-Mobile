@@ -16,7 +16,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   places,
-  type CategoryId,
   type IconName,
   type Place,
 } from '../../constants/places';
@@ -24,13 +23,11 @@ import {
 import BottomTabBar, {
   type AppTab,
 } from '../../components/BottomTabBar';
-import AppLogo from '../../components/AppLogo';
+import AppHeader from '../../components/AppHeader';
 
 // ==================== TYPES ====================
 
 export type { AppTab };
-
-type UserMode = 'traveler' | 'partner';
 
 type ViewMode = 'list' | 'grid';
 
@@ -54,20 +51,6 @@ const COLORS = {
   star: '#E0A100',
   white: '#FFFFFF',
 };
-
-// ==================== MOCK DATA ====================
-
-const categories: {
-  id: CategoryId;
-  label: string;
-  icon?: IconName;
-}[] = [
-  { id: 'all', label: 'Tất cả' },
-  { id: 'food', label: 'Ẩm thực', icon: 'food-outline' },
-  { id: 'culture', label: 'Văn hoá', icon: 'bank-outline' },
-  { id: 'nature', label: 'Thiên nhiên', icon: 'image-filter-hdr' },
-  { id: 'shopping', label: 'Mua sắm', icon: 'shopping-outline' },
-];
 
 // ==================== PLACE CARD (LIST) ====================
 
@@ -314,9 +297,6 @@ export default function ExploreScreen({
   favorites: externalFavorites,
   onToggleFavorite,
 }: ExploreScreenProps) {
-  const [mode, setMode] = useState<UserMode>('traveler');
-  const [language, setLanguage] = useState<'VI' | 'EN'>('VI');
-  const [category, setCategory] = useState<CategoryId>('all');
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [localFavorites, setLocalFavorites] = useState<string[]>([
@@ -365,21 +345,14 @@ export default function ExploreScreen({
   const visiblePlaces = useMemo(() => {
     const keyword = query.trim().toLowerCase();
 
-    return places.filter((place) => {
-      const matchCategory =
-        category === 'all' ||
-        place.category === category ||
-        (category === 'shopping' && place.category === 'food');
-
-      const matchKeyword =
+    return places.filter(
+      (place) =>
         !keyword ||
         place.name.toLowerCase().includes(keyword) ||
         place.location.toLowerCase().includes(keyword) ||
-        place.tag.toLowerCase().includes(keyword);
-
-      return matchCategory && matchKeyword;
-    });
-  }, [category, query]);
+        place.tag.toLowerCase().includes(keyword)
+    );
+  }, [query]);
 
   return (
     <SafeAreaView
@@ -394,117 +367,16 @@ export default function ExploreScreen({
 
       {/* ================= HEADER ================= */}
 
-      <View className="h-[65px] flex-row items-center justify-between bg-white px-4">
-        <AppLogo />
-
-        <View className="flex-row items-center gap-3">
-          {/* Language switch */}
-          <View className="flex-row rounded-full bg-[#EBEDFF] p-0.5">
-            {(['VI', 'EN'] as const).map((lang) => {
-              const selected = language === lang;
-
-              return (
-                <Pressable
-                  key={lang}
-                  onPress={() => setLanguage(lang)}
-                  className="rounded-full px-2 py-1"
-                  style={{
-                    backgroundColor: selected
-                      ? COLORS.white
-                      : 'transparent',
-                  }}
-                >
-                  <Text
-                    className="text-[10px] font-extrabold"
-                    style={{
-                      color: selected ? COLORS.primary : '#8C989E',
-                    }}
-                  >
-                    {lang}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Pressable
-            onPress={() => handleTabPress('profile')}
-            className="h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: '#62AAA4' }}
-          >
-            <MaterialCommunityIcons
-              name="account"
-              size={22}
-              color="white"
-            />
-          </Pressable>
-        </View>
-      </View>
+      <AppHeader onProfilePress={() => handleTabPress('profile')} />
 
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        stickyHeaderIndices={[1]}
+        stickyHeaderIndices={[0]}
         contentContainerStyle={{ paddingBottom: 24 }}
       >
-        {/* ================= MODE SWITCH ================= */}
-
-        <View className="px-4 pt-3">
-          <View className="flex-row rounded-full bg-white p-1">
-            {(
-              [
-                {
-                  id: 'traveler',
-                  label: 'Khách du lịch',
-                  icon: 'account-group-outline',
-                },
-                {
-                  id: 'partner',
-                  label: 'Đối tác',
-                  icon: 'storefront-outline',
-                },
-              ] as { id: UserMode; label: string; icon: IconName }[]
-            ).map((item) => {
-              const selected = mode === item.id;
-
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => {
-                    setMode(item.id);
-                    if (item.id === 'partner') {
-                      showComingSoon('Chế độ Đối tác');
-                    }
-                  }}
-                  className="h-9 flex-1 flex-row items-center justify-center rounded-full"
-                  style={{
-                    backgroundColor: selected
-                      ? COLORS.mint
-                      : 'transparent',
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name={item.icon}
-                    size={16}
-                    color={selected ? COLORS.primary : '#7E8797'}
-                  />
-                  <Text
-                    className="ml-1.5 text-[13px]"
-                    style={{
-                      color: selected ? COLORS.primaryDark : '#7E8797',
-                      fontWeight: selected ? '800' : '600',
-                    }}
-                  >
-                    {item.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* ================= SEARCH + CATEGORIES (STICKY) ================= */}
+        {/* ================= SEARCH (STICKY) ================= */}
 
         <View
           className="pb-2 pt-3"
@@ -538,52 +410,6 @@ export default function ExploreScreen({
             </View>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              paddingHorizontal: 16,
-              paddingTop: 12,
-              gap: 8,
-            }}
-          >
-            {categories.map((item) => {
-              const selected = category === item.id;
-
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setCategory(item.id)}
-                  className="h-9 flex-row items-center rounded-full px-4"
-                  style={{
-                    backgroundColor: selected
-                      ? COLORS.primary
-                      : COLORS.white,
-                    borderWidth: selected ? 0 : 1,
-                    borderColor: '#E3E7F0',
-                  }}
-                >
-                  {item.icon && (
-                    <MaterialCommunityIcons
-                      name={item.icon}
-                      size={15}
-                      color={selected ? COLORS.white : '#4A7091'}
-                      style={{ marginRight: 5 }}
-                    />
-                  )}
-                  <Text
-                    className="text-[13px]"
-                    style={{
-                      color: selected ? COLORS.white : '#36546A',
-                      fontWeight: selected ? '800' : '600',
-                    }}
-                  >
-                    {item.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
         </View>
 
         {/* ================= RESULT INFO ================= */}
@@ -602,7 +428,7 @@ export default function ExploreScreen({
             >
               Tìm thấy{' '}
               <Text className="font-extrabold" style={{ color: COLORS.text }}>
-                {category === 'all' && !query ? 128 : visiblePlaces.length}
+                {!query ? 128 : visiblePlaces.length}
               </Text>{' '}
               địa điểm tuyệt vời tại Việt Nam
             </Text>
