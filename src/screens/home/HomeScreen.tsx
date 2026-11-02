@@ -14,7 +14,7 @@ import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { type Destination, heroImage } from '../../constants/homeData';
 import BottomTabBar, { type AppTab } from '../../components/BottomTabBar';
-import AppLogo from '../../components/AppLogo';
+import AppHeader from '../../components/AppHeader';
 
 // Demo-only UI: dữ liệu đối tác / mức giá / ưu đãi đều là hardcode.
 // Không kết nối quảng cáo thật hoặc thanh toán.
@@ -411,18 +411,10 @@ export default function HomeScreen({
   return (
     <SafeAreaView edges={['top', 'bottom']} className="flex-1" style={{ backgroundColor: C.background }}>
       {/* Giữ nguyên header / tìm kiếm / banner lập kế hoạch từ Home hiện tại */}
-      <View className="h-16 flex-row items-center justify-between bg-[#FAF8FF] px-4">
-        <AppLogo />
-        <View className="flex-row items-center gap-2">
-          <Pressable onPress={() => Alert.alert('Ngôn ngữ', 'Chức năng đang phát triển.')} className="rounded-full bg-[#EAEDFF] px-2 py-1">
-            <Text className="text-[11px] font-bold" style={{ color: C.primary }}>🌐 VI | EN</Text>
-          </Pressable>
-          <ActionIcon name="bell-outline" badge onPress={onNotificationPress} />
-          <Pressable onPress={onProfilePress} className="h-9 w-9 items-center justify-center rounded-full bg-[#99EFE5]">
-            <Icon name="account" size={20} color={C.primary} />
-          </Pressable>
-        </View>
-      </View>
+      <AppHeader
+        onNotificationPress={onNotificationPress}
+        onProfilePress={onProfilePress}
+      />
 
       <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
                   contentContainerStyle={{ paddingBottom: 30 }}>

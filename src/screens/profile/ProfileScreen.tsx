@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import BottomTabBar, {
   type AppTab,
 } from '../../components/BottomTabBar';
-import AppLogo from '../../components/AppLogo';
+import AppHeader from '../../components/AppHeader';
 
 // ==================== TYPES ====================
 
@@ -290,37 +290,10 @@ export default function ProfileScreen({
 
       {/* ================= HEADER ================= */}
 
-      <View className="h-[65px] flex-row items-center justify-between bg-white px-4">
-
-        <AppLogo />
-
-        <View className="flex-row items-center gap-4">
-
-          <Pressable
-            onPress={() => showComingSoon('Thông báo')}
-          >
-            <MaterialCommunityIcons
-              name="bell-outline"
-              size={23}
-              color="#8C989E"
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={handleEditProfile}
-            className="h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: '#62AAA4' }}
-          >
-            <MaterialCommunityIcons
-              name="account"
-              size={22}
-              color="white"
-            />
-          </Pressable>
-
-        </View>
-
-      </View>
+      <AppHeader
+        onNotificationPress={() => showComingSoon('Thông báo')}
+        onProfilePress={handleEditProfile}
+      />
 
       {/* ================= MAIN CONTENT ================= */}
 

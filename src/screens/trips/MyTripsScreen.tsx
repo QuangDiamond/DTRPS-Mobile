@@ -13,6 +13,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import AppHeader from '../../components/AppHeader';
 import BottomTabBar, {
   type AppTab,
 } from '../../components/BottomTabBar';
@@ -21,7 +22,7 @@ import { trips as mockTrips, type Trip } from '../../constants/trips';
 
 // ==================== TYPES ====================
 
-type TripFilter = 'upcoming' | 'saved' | 'completed';
+type TripFilter = 'upcoming' | 'completed';
 
 type MyTripsScreenProps = {
   onTabPress?: (tab: AppTab) => void;
@@ -45,7 +46,6 @@ const COLORS = {
 
 const filters: { id: TripFilter; label: string }[] = [
   { id: 'upcoming', label: 'Sắp tới' },
-  { id: 'saved', label: 'Đã lưu' },
   { id: 'completed', label: 'Đã đi' },
 ];
 
@@ -394,7 +394,6 @@ export default function MyTripsScreen({
       upcoming: trips.filter(
         (trip) => trip.status === 'upcoming' || trip.status === 'planned'
       ).length,
-      saved: trips.filter((trip) => trip.status === 'saved').length,
       completed: trips.filter((trip) => trip.status === 'completed').length,
     }),
     [trips]
@@ -440,7 +439,6 @@ export default function MyTripsScreen({
 
   const emptyText = {
     upcoming: 'Bạn chưa có chuyến đi nào sắp tới.',
-    saved: 'Bạn chưa lưu lịch trình nào.',
     completed: 'Bạn chưa hoàn thành chuyến đi nào.',
   }[filter];
 
@@ -454,39 +452,10 @@ export default function MyTripsScreen({
 
       {/* ================= HEADER ================= */}
 
-      <View className="h-[60px] flex-row items-center justify-between bg-white px-4">
-        <View className="flex-row items-center">
-          <View
-            className="h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: COLORS.mint }}
-          >
-            <MaterialCommunityIcons
-              name="compass-outline"
-              size={21}
-              color={COLORS.primary}
-            />
-          </View>
-          <Text
-            className="ml-2.5 text-[17px] font-extrabold"
-            style={{ color: COLORS.text }}
-          >
-            Chuyến Đi
-          </Text>
-        </View>
-
-        <View className="flex-row items-center gap-4">
-          <Pressable onPress={() => showComingSoon('Thông báo')}>
-            <MaterialCommunityIcons name="bell-outline" size={23} color="#8C989E" />
-          </Pressable>
-          <Pressable
-            onPress={() => handleTabPress('profile')}
-            className="h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: COLORS.primaryDark }}
-          >
-            <MaterialCommunityIcons name="account" size={22} color="white" />
-          </Pressable>
-        </View>
-      </View>
+      <AppHeader
+        onNotificationPress={() => showComingSoon('Thông báo')}
+        onProfilePress={() => handleTabPress('profile')}
+      />
 
       <ScrollView
         className="flex-1"
