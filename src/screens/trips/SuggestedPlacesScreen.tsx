@@ -33,7 +33,6 @@ import { planDestinations } from '../../constants/planTrip';
 
 import {
   getMatchScore,
-  interestTagLabels,
   suggestedPlaces,
   suggestionCategoryLabels,
   type SuggestedPlace,
@@ -44,14 +43,13 @@ import SuggestionDetailScreen from './SuggestionDetailScreen';
 
 // ==================== TYPES ====================
 
-type IconName =
-  React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-
 type SuggestedPlacesScreenProps = {
   destinationId: string;
   interests: string[];
   onBack: () => void;
   onSavePlan: (placeIds: string[]) => void;
+  // Tùy chọn: kết nối sang trang chi tiết quảng cáo Partner về sau.
+  onPartnerAdPress?: (ad: PartnerAd) => void;
 };
 
 type MapPlace = SuggestedPlace & {
@@ -61,12 +59,182 @@ type MapPlace = SuggestedPlace & {
   approximate: boolean;
 };
 
+type CompareRow = {
+  id: string;
+  place: MapPlace | null;
+  ad: PartnerAd | null;
+  aiIndex: number;
+};
+
 type PlaceWithCoordinate = SuggestedPlace & {
   coordinate?: LatLng;
   latitude?: number;
   longitude?: number;
   rating?: number;
 };
+
+
+// Quảng cáo Partner hardcode, độc lập với địa điểm AI và marker trên bản đồ.
+// Tất cả tên đối tác, ưu đãi, giá và đánh giá là dữ liệu minh họa.
+export type PartnerAd = {
+  id: string;
+  destinationKey: string;
+  name: string;
+  category: 'Lưu trú' | 'Ẩm thực' | 'Trải nghiệm';
+  location: string;
+  image: string;
+  offer: string;
+  price: string;
+  description: string;
+};
+
+const PARTNER_ADS: PartnerAd[] = [
+  {
+    id: 'p-hn-1', destinationKey: 'ha noi', name: 'Mộc Phố Coffee',
+    category: 'Ẩm thực', location: 'Hà Nội', offer: 'Mua 1 tặng 1',
+    price: '49.000đ', description: 'Một không gian cà phê ấm cúng ngay giữa phố.',
+    image: 'https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=800&q=85',
+  },
+  {
+    id: 'p-hn-2', destinationKey: 'ha noi', name: 'Hồ Gươm Boutique',
+    category: 'Lưu trú', location: 'Hoàn Kiếm, Hà Nội', offer: 'Giảm 20%',
+    price: '790.000đ', description: 'Không gian lưu trú tinh tế gần khu phố cổ.',
+    image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800&q=85',
+  },
+  {
+    id: 'p-dn-1', destinationKey: 'da nang', name: 'Sóng Xanh Resort',
+    category: 'Lưu trú', location: 'Đà Nẵng', offer: 'Giảm 30%',
+    price: '1.250.000đ', description: 'Kỳ nghỉ bên bờ biển với hồ bơi xanh mát.',
+    image: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800&q=85',
+  },
+  {
+    id: 'p-dn-2', destinationKey: 'da nang', name: 'Bếp Biển Đà Nẵng',
+    category: 'Ẩm thực', location: 'Sơn Trà, Đà Nẵng', offer: 'Tặng món',
+    price: '199.000đ', description: 'Khám phá hương vị biển và đặc sản địa phương.',
+    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=85',
+  },
+  {
+    id: 'p-ha-1', destinationKey: 'hoi an', name: 'Bếp Nhà Hội An',
+    category: 'Ẩm thực', location: 'Hội An, Quảng Nam', offer: 'Giảm 20%',
+    price: '199.000đ', description: 'Món ngon truyền thống trong không gian phố Hội.',
+    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=85',
+  },
+  {
+    id: 'p-ha-2', destinationKey: 'hoi an', name: 'Lantern Riverside',
+    category: 'Lưu trú', location: 'Hội An, Quảng Nam', offer: 'Giảm 15%',
+    price: '690.000đ', description: 'Nghỉ dưỡng bên sông với phong cách phố cổ.',
+    image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800&q=85',
+  },
+  {
+    id: 'p-dl-1', destinationKey: 'da lat', name: 'Mây Retreat',
+    category: 'Lưu trú', location: 'Đà Lạt', offer: 'Giảm 25%',
+    price: '890.000đ', description: 'Một kỳ nghỉ giữa thiên nhiên và rừng thông.',
+    image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800&q=85',
+  },
+  {
+    id: 'p-dl-2', destinationKey: 'da lat', name: 'Chill Đà Lạt Cafe',
+    category: 'Ẩm thực', location: 'Đà Lạt', offer: 'Tặng đồ uống',
+    price: '59.000đ', description: 'Góc cà phê yên tĩnh với không khí cao nguyên.',
+    image: 'https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=800&q=85',
+  },
+  {
+    id: 'p-hl-1', destinationKey: 'ha long', name: 'Blue Bay Cruise',
+    category: 'Trải nghiệm', location: 'Hạ Long, Quảng Ninh', offer: 'Giảm 15%',
+    price: '950.000đ', description: 'Trải nghiệm vịnh biển trên du thuyền.',
+    image: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?w=800&q=85',
+  },
+  {
+    id: 'p-sp-1', destinationKey: 'sa pa', name: 'Sapa Cloud Stay',
+    category: 'Lưu trú', location: 'Sa Pa, Lào Cai', offer: 'Giảm 20%',
+    price: '590.000đ', description: 'Không gian nghỉ dưỡng hướng núi.',
+    image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800&q=85',
+  },
+  {
+    id: 'p-hue-1', destinationKey: 'hue', name: 'Cố Đô Garden House',
+    category: 'Ẩm thực', location: 'Huế', offer: 'Giảm 10%',
+    price: '149.000đ', description: 'Khám phá hương vị ẩm thực xứ Huế.',
+    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=85',
+  },
+  {
+    id: 'p-nt-1', destinationKey: 'nha trang', name: 'Ocean Breeze Resort',
+    category: 'Lưu trú', location: 'Nha Trang', offer: 'Giảm 25%',
+    price: '990.000đ', description: 'Phòng nghỉ gần biển cùng nhiều tiện ích.',
+    image: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=800&q=85',
+  },
+  {
+    id: 'p-pq-1', destinationKey: 'phu quoc', name: 'Hải Âu Experience',
+    category: 'Trải nghiệm', location: 'Phú Quốc', offer: 'Giảm 15%',
+    price: '590.000đ', description: 'Một ngày khám phá biển đảo thú vị.',
+    image: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?w=800&q=85',
+  },
+  {
+    id: 'p-hcm-1', destinationKey: 'ho chi minh', name: 'Saigon Rooftop Dining',
+    category: 'Ẩm thực', location: 'TP. Hồ Chí Minh', offer: 'Giảm 15%',
+    price: '259.000đ', description: 'Ẩm thực thành phố trong không gian hiện đại.',
+    image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=85',
+  },
+];
+
+// Dữ liệu Partner DEMO: mỗi điểm đến có một danh sách độc lập.
+// Không lặp cùng một thẻ trong một lượt cuộn, không trộn với điểm AI.
+function getPartnerAds(destinationName: string): PartnerAd[] {
+  const key = normalizeName(destinationName);
+  const localAds = PARTNER_ADS.filter(ad => key.includes(ad.destinationKey));
+
+  // Các mẫu quảng cáo bổ sung để thử nghiệm giao diện trên nhiều điểm đến.
+  // Đây không phải doanh nghiệp/ưu đãi thực tế.
+  const demoOffers: Omit<PartnerAd, 'id' | 'destinationKey' | 'location'>[] = [
+    {
+      name: 'Nắng Boutique Stay', category: 'Lưu trú', offer: 'Ưu đãi 15%',
+      price: '780.000đ', description: 'Không gian nghỉ ngơi thanh lịch gần các điểm tham quan.',
+      image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=900&q=82',
+    },
+    {
+      name: 'Bếp Bản Địa', category: 'Ẩm thực', offer: 'Tặng món ngon',
+      price: '179.000đ', description: 'Trải nghiệm hương vị địa phương trong không gian ấm cúng.',
+      image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=900&q=82',
+    },
+    {
+      name: 'Chạm Travel', category: 'Trải nghiệm', offer: 'Giảm 12%',
+      price: '320.000đ', description: 'Khám phá địa phương với các hoạt động thú vị.',
+      image: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=900&q=82',
+    },
+    {
+      name: 'Mơ Home & Garden', category: 'Lưu trú', offer: 'Giảm 20%',
+      price: '650.000đ', description: 'Góc lưu trú xanh mát, phù hợp chuyến đi thư giãn.',
+      image: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=900&q=82',
+    },
+    {
+      name: 'Phố Nhỏ Coffee', category: 'Ẩm thực', offer: 'Mua 1 tặng 1',
+      price: '55.000đ', description: 'Góc cà phê thư giãn và những cuộc hẹn dễ thương.',
+      image: 'https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=900&q=82',
+    },
+    {
+      name: 'Một Ngày Khám Phá', category: 'Trải nghiệm', offer: 'Tiết kiệm 10%',
+      price: '290.000đ', description: 'Chuyến trải nghiệm dành cho người yêu khám phá.',
+      image: 'https://images.unsplash.com/photo-1500534623283-312aade485b7?w=900&q=82',
+    },
+    {
+      name: 'Sông & Biển Retreat', category: 'Lưu trú', offer: 'Giảm 18%',
+      price: '920.000đ', description: 'Kỳ nghỉ với phong cách nhẹ nhàng và gần thiên nhiên.',
+      image: 'https://images.unsplash.com/photo-1571896349842-33c89424de2d?w=900&q=82',
+    },
+    {
+      name: 'Bếp Xanh Kitchen', category: 'Ẩm thực', offer: 'Ưu đãi combo',
+      price: '210.000đ', description: 'Bữa ăn thân mật với những hương vị quen thuộc.',
+      image: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&q=82',
+    },
+  ];
+
+  const supplemental: PartnerAd[] = demoOffers.map((ad, index) => ({
+    ...ad,
+    id: `demo-${key}-${index}`,
+    destinationKey: key,
+    location: destinationName,
+  }));
+
+  return [...localAds, ...supplemental].slice(0, 12);
+}
 
 // ==================== COLORS ====================
 
@@ -82,16 +250,6 @@ const COLORS = {
   white: '#FFFFFF',
   star: '#F59E38',
   border: '#EBEDF5',
-};
-
-const tagIcons: Record<string, IconName> = {
-  beach: 'beach',
-  food: 'food-outline',
-  culture: 'bank-outline',
-  nature: 'image-filter-hdr',
-  shopping: 'shopping-outline',
-  adventure: 'hiking',
-  relax: 'spa-outline',
 };
 
 const FLOW_STEPS = 6;
@@ -521,283 +679,221 @@ function createExtraHanoiPlaces(
     });
 }
 
-// ==================== RATING COMPONENT ====================
+// ==================== TWO MATCHED CARD STYLES ====================
+// Cùng kích thước, cùng bố cục ảnh -> tiêu đề -> thông tin -> CTA.
+// AI = kết quả theo sở thích; Partner = quảng cáo, luôn ghi rõ nhãn tài trợ.
 
-function RatingStars({
-                       rating,
-                     }: {
-  rating: number;
-}) {
-  const safeRating = Math.max(
-    0,
-    Math.min(5, rating)
-  );
+const CARD_HEIGHT = 286;
+const CARD_IMAGE_HEIGHT = 122;
+const CARD_RADIUS = 18;
 
-  return (
-    <View className="flex-row items-center">
-      {[0, 1, 2, 3, 4].map(index => {
-        const remaining = safeRating - index;
-
-        const iconName: IconName =
-          remaining >= 0.75
-            ? 'star'
-            : remaining >= 0.25
-              ? 'star-half-full'
-              : 'star-outline';
-
-        return (
-          <MaterialCommunityIcons
-            key={index}
-            name={iconName}
-            size={19}
-            color={COLORS.star}
-            style={{ marginRight: 1 }}
-          />
-        );
-      })}
-
-      <Text
-        className="ml-1 text-[13px] font-extrabold"
-        style={{ color: COLORS.star }}
-      >
-        {safeRating.toFixed(1)}
-      </Text>
-    </View>
-  );
-}
-
-// ==================== SUGGESTION CARD ====================
-
-function SuggestionCard({
-                          place,
-                          index,
-                          best,
-                          favorite,
-                          inPlan,
-                          active,
-                          onPress,
-                          onToggleFavorite,
-                        }: {
+function MatchCard({
+                     place, index, favorite, inPlan, active,
+                     onPress, onToggleFavorite, onTogglePlan,
+                   }: {
   place: MapPlace;
   index: number;
-  best: boolean;
   favorite: boolean;
   inPlan: boolean;
   active: boolean;
   onPress: () => void;
   onToggleFavorite: () => void;
+  onTogglePlan: () => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      className="mb-3 overflow-hidden rounded-[20px] bg-white"
+      accessibilityRole="button"
+      accessibilityLabel={`Xem địa điểm ${place.name}`}
       style={{
-        borderWidth: active ? 2 : 1,
-        borderColor: active
-          ? COLORS.primary
-          : COLORS.border,
-        elevation: active ? 3 : 2,
+        flex: 1, minWidth: 0, height: CARD_HEIGHT,
+        borderRadius: CARD_RADIUS, backgroundColor: COLORS.white,
+        borderWidth: active ? 1.5 : 1,
+        borderColor: active ? COLORS.primary : '#E7EBEF',
+        overflow: 'hidden',
+        shadowColor: '#0D4543', shadowOpacity: 0.07,
+        shadowRadius: 9, shadowOffset: { width: 0, height: 3 },
+        elevation: 2,
       }}
     >
-      {/* ==================== IMAGE ==================== */}
-
       <ImageBackground
         source={{ uri: place.image }}
-        style={{ height: 145 }}
+        resizeMode="cover"
+        style={{ height: CARD_IMAGE_HEIGHT, justifyContent: 'space-between' }}
       >
         <LinearGradient
-          colors={[
-            'rgba(0,0,0,0.05)',
-            'rgba(0,0,0,0.68)',
-          ]}
-          style={{
-            flex: 1,
-            padding: 12,
-            justifyContent: 'space-between',
-          }}
-        >
-          {/* BADGES */}
-
-          <View className="flex-row items-start justify-between">
-            <View className="flex-1 flex-row flex-wrap items-center gap-1.5">
-              {/* NUMBER */}
-
-              <View
-                className="h-7 w-7 items-center justify-center rounded-full"
-                style={{
-                  backgroundColor: active
-                    ? COLORS.primaryDark
-                    : '#12A99A',
-                  borderWidth: 1,
-                  borderColor: 'white',
-                }}
-              >
-                <Text className="text-[12px] font-extrabold text-white">
-                  {index + 1}
-                </Text>
-              </View>
-
-              {best && (
-                <View className="flex-row items-center rounded-full bg-[#FFF1C7] px-2 py-1">
-                  <MaterialCommunityIcons
-                    name="star"
-                    size={12}
-                    color="#D99A00"
-                  />
-
-                  <Text className="ml-1 text-[10px] font-bold text-[#7A5600]">
-                    Phù hợp nhất
-                  </Text>
-                </View>
-              )}
-
-              {inPlan && (
-                <View
-                  className="flex-row items-center rounded-full px-2 py-1"
-                  style={{
-                    backgroundColor: COLORS.mint,
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="check"
-                    size={12}
-                    color={COLORS.primaryDark}
-                  />
-
-                  <Text
-                    className="ml-1 text-[10px] font-bold"
-                    style={{
-                      color: COLORS.primaryDark,
-                    }}
-                  >
-                    Trong kế hoạch
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* FAVORITE */}
-
-            <Pressable
-              onPress={event => {
-                event.stopPropagation();
-                onToggleFavorite();
-              }}
-              hitSlop={8}
-              className="h-8 w-8 items-center justify-center rounded-full bg-white/90"
-              accessibilityLabel={
-                favorite ? 'Bỏ yêu thích' : 'Yêu thích'
-              }
-            >
-              <MaterialCommunityIcons
-                name={
-                  favorite ? 'heart' : 'heart-outline'
-                }
-                size={18}
-                color={
-                  favorite
-                    ? COLORS.heart
-                    : COLORS.text
-                }
-              />
-            </Pressable>
-          </View>
-
-          {/* TITLE */}
-
-          <View className="flex-row items-end justify-between">
-            <View className="min-w-0 flex-1 pr-2">
-              <Text
-                numberOfLines={1}
-                className="text-[18px] font-extrabold text-white"
-              >
-                {place.name}
-              </Text>
-
-              <View className="mt-1 flex-row items-center">
-                <MaterialCommunityIcons
-                  name="map-marker-outline"
-                  size={13}
-                  color="white"
-                />
-
-                <Text
-                  numberOfLines={1}
-                  className="ml-1 text-[11px] text-white"
-                >
-                  {place.location}
-                </Text>
-              </View>
-            </View>
-
-            <View
-              className="rounded-full px-2.5 py-1"
-              style={{
-                backgroundColor: COLORS.mint,
-              }}
-            >
-              <Text
-                className="text-[10px] font-bold"
-                style={{
-                  color: COLORS.primaryDark,
-                }}
-              >
-                {place.match}% phù hợp
-              </Text>
-            </View>
-          </View>
-        </LinearGradient>
-      </ImageBackground>
-
-      {/* ==================== RATING ==================== */}
-
-      <View className="flex-row items-center justify-between px-3 pb-2 pt-3">
-        <RatingStars rating={place.rating} />
-
-        <View className="flex-row items-center">
-          <MaterialCommunityIcons
-            name="star-four-points-outline"
-            size={14}
-            color={COLORS.primary}
-          />
-
-          <Text
-            className="ml-1 text-[10px] font-semibold"
-            style={{ color: COLORS.primaryDark }}
-          >
-            AI đề xuất
-          </Text>
-        </View>
-      </View>
-
-      {/* ==================== TAGS ==================== */}
-
-      <View className="flex-row flex-wrap gap-3 px-3 pb-3">
-        {place.tags.slice(0, 3).map(tag => (
-          <View
-            key={tag}
-            className="flex-row items-center"
-          >
-            <MaterialCommunityIcons
-              name={
-                tagIcons[tag] ?? 'tag-outline'
-              }
-              size={15}
-              color={COLORS.primary}
-            />
-
-            <Text
-              className="ml-1 text-[11px]"
-              style={{
-                color: COLORS.text,
-              }}
-            >
-              {interestTagLabels[tag] ?? tag}
+          colors={['rgba(0,0,0,0.36)', 'rgba(0,0,0,0.02)', 'rgba(0,0,0,0.37)']}
+          locations={[0, 0.52, 1]}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <View className="flex-row items-start justify-between px-2 pt-2">
+          <View className="flex-row items-center rounded-full bg-white/95 px-2 py-1.5">
+            <MaterialCommunityIcons name="creation" size={11} color={COLORS.primaryDark} />
+            <Text className="ml-1 text-[9px] font-extrabold" style={{ color: COLORS.primaryDark }}>
+              AI GỢI Ý
             </Text>
           </View>
-        ))}
+          <Pressable
+            hitSlop={8}
+            onPress={event => { event.stopPropagation(); onToggleFavorite(); }}
+            accessibilityRole="button"
+            accessibilityLabel={favorite ? 'Bỏ yêu thích' : 'Lưu yêu thích'}
+            className="h-8 w-8 items-center justify-center rounded-full bg-white/95"
+          >
+            <MaterialCommunityIcons
+              name={favorite ? 'heart' : 'heart-outline'}
+              size={18}
+              color={favorite ? COLORS.heart : COLORS.primaryDark}
+            />
+          </Pressable>
+        </View>
+        <View className="mb-2 ml-2 self-start rounded-full bg-[#DAFAF0] px-2.5 py-1.5">
+          <Text className="text-[10px] font-extrabold" style={{ color: COLORS.primaryDark }}>
+            <MaterialCommunityIcons name="star-four-points" size={11} color={COLORS.primaryDark} />{' '}
+            {place.match}% phù hợp
+          </Text>
+        </View>
+      </ImageBackground>
+
+      <View style={{ flex: 1, paddingHorizontal: 11, paddingTop: 9, paddingBottom: 10 }}>
+        <Text numberOfLines={2} style={{ height: 37, color: COLORS.text, fontWeight: '800', fontSize: 13.5, lineHeight: 18 }}>
+          {place.name}
+        </Text>
+        <View className="mt-0.5 flex-row items-center">
+          <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.muted} />
+          <Text numberOfLines={1} className="ml-0.5 flex-1 text-[10px]" style={{ color: COLORS.muted }}>
+            {place.location}
+          </Text>
+        </View>
+        <View className="mt-2 flex-row items-center justify-between">
+          <View className="flex-row items-center">
+            <MaterialCommunityIcons name="star" size={13} color="#E6A332" />
+            <Text className="ml-1 text-[11px] font-bold" style={{ color: COLORS.text }}>
+              {place.rating.toFixed(1)}
+            </Text>
+          </View>
+          <Text className="text-[10px] font-semibold" style={{ color: COLORS.muted }}>
+            #{index + 1} theo sở thích
+          </Text>
+        </View>
+        <View style={{ flex: 1 }} />
+        <Pressable
+          onPress={event => { event.stopPropagation(); onTogglePlan(); }}
+          accessibilityRole="button"
+          accessibilityLabel={inPlan ? 'Bỏ khỏi kế hoạch' : 'Thêm vào kế hoạch'}
+          className="h-9 flex-row items-center justify-center rounded-xl"
+          style={{ backgroundColor: inPlan ? '#DAF5EA' : COLORS.primaryDark }}
+        >
+          <MaterialCommunityIcons
+            name={inPlan ? 'check-circle-outline' : 'plus'}
+            size={16}
+            color={inPlan ? COLORS.primaryDark : 'white'}
+          />
+          <Text
+            numberOfLines={1}
+            className="ml-1 text-[10px] font-extrabold"
+            style={{ color: inPlan ? COLORS.primaryDark : 'white' }}
+          >
+            {inPlan ? 'Đã thêm' : 'Thêm vào kế hoạch'}
+          </Text>
+        </Pressable>
       </View>
     </Pressable>
+  );
+}
+
+function SponsoredCard({ ad, onPress }: { ad: PartnerAd; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Xem thông tin quảng cáo từ ${ad.name}`}
+      style={{
+        flex: 1, minWidth: 0, height: CARD_HEIGHT,
+        borderRadius: CARD_RADIUS, backgroundColor: COLORS.white,
+        borderWidth: 1, borderColor: '#E7EBEF', overflow: 'hidden',
+        shadowColor: '#0D4543', shadowOpacity: 0.07,
+        shadowRadius: 9, shadowOffset: { width: 0, height: 3 },
+        elevation: 2,
+      }}
+    >
+      <ImageBackground
+        source={{ uri: ad.image }}
+        resizeMode="cover"
+        style={{ height: CARD_IMAGE_HEIGHT, justifyContent: 'space-between' }}
+      >
+        <LinearGradient
+          colors={['rgba(0,0,0,0.36)', 'rgba(0,0,0,0.02)', 'rgba(0,0,0,0.37)']}
+          locations={[0, 0.52, 1]}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="none"
+        />
+        <View className="flex-row items-start justify-between px-2 pt-2">
+          <View className="flex-row items-center rounded-full bg-white/95 px-2 py-1.5">
+            <MaterialCommunityIcons name="storefront-outline" size={11} color={COLORS.primaryDark} />
+            <Text className="ml-1 text-[9px] font-extrabold" style={{ color: COLORS.primaryDark }}>
+              TÀI TRỢ
+            </Text>
+          </View>
+          <View className="h-8 w-8 items-center justify-center rounded-full bg-white/95">
+            <MaterialCommunityIcons name="tag-outline" size={18} color={COLORS.primaryDark} />
+          </View>
+        </View>
+        <View className="mb-2 ml-2 self-start rounded-full bg-[#FFF3D5] px-2.5 py-1.5">
+          <Text className="text-[10px] font-extrabold text-[#79551B]" numberOfLines={1}>
+            {ad.offer}
+          </Text>
+        </View>
+      </ImageBackground>
+
+      <View style={{ flex: 1, paddingHorizontal: 11, paddingTop: 9, paddingBottom: 10 }}>
+        <Text numberOfLines={2} style={{ height: 37, color: COLORS.text, fontWeight: '800', fontSize: 13.5, lineHeight: 18 }}>
+          {ad.name}
+        </Text>
+        <View className="mt-0.5 flex-row items-center">
+          <MaterialCommunityIcons name="map-marker-outline" size={12} color={COLORS.muted} />
+          <Text numberOfLines={1} className="ml-0.5 flex-1 text-[10px]" style={{ color: COLORS.muted }}>
+            {ad.location}
+          </Text>
+        </View>
+        <View className="mt-2 flex-row items-center justify-between">
+          <Text numberOfLines={1} className="flex-1 text-[10px] font-semibold" style={{ color: COLORS.muted }}>
+            {ad.category}
+          </Text>
+          <Text numberOfLines={1} className="ml-1 text-[11px] font-extrabold" style={{ color: COLORS.primaryDark }}>
+            {ad.price}
+          </Text>
+        </View>
+        <View style={{ flex: 1 }} />
+        <View className="h-9 flex-row items-center justify-center rounded-xl" style={{ backgroundColor: COLORS.primaryDark }}>
+          <Text numberOfLines={1} className="mr-1 text-[10px] font-extrabold text-white">
+            Xem dịch vụ
+          </Text>
+          <MaterialCommunityIcons name="arrow-top-right" size={15} color="white" />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// Vẽ vị trí trống trung tính thay vì lặp quảng cáo hoặc bịa dữ liệu.
+function EmptyColumnCard({ label }: { label: string }) {
+  return (
+    <View
+      style={{
+        flex: 1, minWidth: 0, height: CARD_HEIGHT,
+        borderRadius: CARD_RADIUS, borderWidth: 1,
+        borderColor: '#E9EEF0', borderStyle: 'dashed',
+        backgroundColor: '#F8FBFA', justifyContent: 'center',
+        alignItems: 'center', paddingHorizontal: 12,
+      }}
+    >
+      <MaterialCommunityIcons name="map-search-outline" size={25} color="#A8B7B6" />
+      <Text className="mt-2 text-center text-[11px] leading-[17px]" style={{ color: COLORS.muted }}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -808,6 +904,7 @@ export default function SuggestedPlacesScreen({
                                                 interests,
                                                 onBack,
                                                 onSavePlan,
+                                                onPartnerAdPress,
                                               }: SuggestedPlacesScreenProps) {
 
   // ==================== DESTINATION ====================
@@ -842,7 +939,7 @@ export default function SuggestedPlacesScreen({
   const mapRef = useRef<MapView>(null);
 
   const listRef =
-    useRef<FlatList<MapPlace>>(null);
+    useRef<FlatList<CompareRow>>(null);
 
   // ==================== DATA ====================
 
@@ -912,6 +1009,24 @@ export default function SuggestedPlacesScreen({
     interests,
   ]);
 
+  // Partner hiển thị theo đúng điểm đến đang chọn, không ảnh hưởng kết quả AI.
+  const partnerAds = useMemo(
+    () => getPartnerAds(destination.short),
+    [destination.short]
+  );
+
+  const openPartnerAd = (ad: PartnerAd) => {
+    if (onPartnerAdPress) {
+      onPartnerAdPress(ad);
+      return;
+    }
+    Alert.alert(
+      `Ưu đãi từ ${ad.name}`,
+      `${ad.category} · ${ad.location}\n\n${ad.description}\n\n${ad.offer} · Giá demo từ ${ad.price}\n\nĐây là quảng cáo minh họa, chưa có đặt dịch vụ hoặc thanh toán thật.`,
+      [{ text: 'Đóng' }]
+    );
+  };
+
   // ==================== CATEGORIES ====================
 
   const categories = useMemo(() => {
@@ -946,6 +1061,26 @@ export default function SuggestedPlacesScreen({
       place => place.category === category
     );
   }, [category, places]);
+
+  // Dùng cùng số vị trí hiển thị cho AI và Partner (tối đa số AI đang lọc).
+  // Không lặp thẻ, không ép kết quả quảng cáo vào thứ hạng AI.
+  const displayPartnerAds = useMemo(
+    () => partnerAds.slice(0, Math.max(visiblePlaces.length, 1)),
+    [partnerAds, visiblePlaces.length]
+  );
+  const comparisonRows = useMemo<CompareRow[]>(() => {
+    const count = Math.max(visiblePlaces.length, displayPartnerAds.length);
+    return Array.from({ length: count }, (_, index) => {
+      const place = visiblePlaces[index] ?? null;
+      const ad = displayPartnerAds[index] ?? null;
+      return {
+        id: `comparison-${index}-${place?.id ?? 'empty'}-${ad?.id ?? 'empty'}`,
+        place,
+        ad,
+        aiIndex: index,
+      };
+    });
+  }, [visiblePlaces, displayPartnerAds]);
 
   const selectedPlace =
     places.find(
@@ -990,31 +1125,14 @@ export default function SuggestedPlacesScreen({
   // ==================== LIST SCROLL SYNC ====================
 
   const onViewableItemsChanged = useRef(
-    ({
-       viewableItems,
-     }: {
-      viewableItems: ViewToken[];
-    }) => {
-      const visible = viewableItems.find(
-        item => item.isViewable
-      );
-
-      const place = visible?.item as
-        | MapPlace
-        | undefined;
-
-      if (!place) {
-        return;
-      }
-
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const firstVisible = viewableItems.find(item => item.isViewable);
+      const row = firstVisible?.item as CompareRow | undefined;
+      const place = row?.place;
+      if (!place) return;
       setActiveId(place.id);
-
       mapRef.current?.animateToRegion(
-        {
-          ...place.mapCoordinate,
-          latitudeDelta: 0.035,
-          longitudeDelta: 0.035,
-        },
+        { ...place.mapCoordinate, latitudeDelta: 0.035, longitudeDelta: 0.035 },
         400
       );
     }
@@ -1314,7 +1432,7 @@ export default function SuggestedPlacesScreen({
 
         {/* ==================== FIXED CATEGORY TABS ==================== */}
 
-        {/* Thanh này NẰM NGOÀI FlatList để không trôi khi cuộn */}
+        {/* Chỉ lọc danh sách AI; không can thiệp quảng cáo Partner */}
 
         <View className="border-b border-[#EEF1F5] bg-white py-3">
           <ScrollView
@@ -1366,166 +1484,101 @@ export default function SuggestedPlacesScreen({
           </ScrollView>
         </View>
 
-        {/* ==================== SCROLLABLE PLACE LIST ==================== */}
+        {/* ==================== FAIR 50/50 SPLIT LIST ==================== */}
 
         <FlatList
           ref={listRef}
           className="flex-1"
-          data={visiblePlaces}
+          data={comparisonRows}
           keyExtractor={item => item.id}
           showsVerticalScrollIndicator={false}
-          initialNumToRender={6}
-          viewabilityConfig={
-            viewabilityConfig
-          }
-          onViewableItemsChanged={
-            onViewableItemsChanged
-          }
+          initialNumToRender={5}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
           onScrollToIndexFailed={info => {
             listRef.current?.scrollToOffset({
-              offset:
-                info.averageItemLength *
-                info.index,
+              offset: info.averageItemLength * info.index,
               animated: true,
             });
           }}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingBottom: 20,
-          }}
-
-          // Chỉ để lời giới thiệu và tiêu đề trong vùng cuộn.
-          // Category đã được chuyển ra ngoài.
-
+          contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 22 }}
           ListHeaderComponent={
             <View>
-              {/* INTRO */}
-
-              <View
-                className="mt-3 flex-row items-center rounded-2xl p-3"
-                style={{
-                  backgroundColor:
-                    '#E8F8F5',
-                }}
-              >
-                <View
-                  className="h-10 w-10 items-center justify-center rounded-full"
-                  style={{
-                    backgroundColor:
-                    COLORS.mint,
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="star-four-points"
-                    size={20}
-                    color={
-                      COLORS.primaryDark
-                    }
-                  />
-                </View>
-
-                <Text
-                  className="ml-3 flex-1 text-[12px] leading-[18px]"
-                  style={{
-                    color: COLORS.text,
-                  }}
-                >
-                  Dựa trên sở thích của bạn,
-                  đây là những địa điểm phù
-                  hợp tại{' '}
-                  <Text
-                    className="font-bold"
-                    style={{
-                      color:
-                      COLORS.primaryDark,
-                    }}
-                  >
-                    {destination.short}
+              <View className="mb-3 mt-3 rounded-2xl bg-[#E9F7F4] p-3">
+                <View className="flex-row items-center">
+                  <MaterialCommunityIcons name="view-grid-outline" size={18} color={COLORS.primaryDark} />
+                  <Text className="ml-2 flex-1 text-[12px] font-bold" style={{ color: COLORS.primaryDark }}>
+                    Gợi ý & dịch vụ dành cho bạn
                   </Text>
-                  .
+                </View>
+                <Text className="mt-1 text-[11px] leading-[16px]" style={{ color: COLORS.muted }}>
+                  Cùng khám phá điểm đến phù hợp và dịch vụ từ đối tác. Mỗi loại được hiển thị riêng, dễ so sánh.
+                </Text>
+                <Text className="mt-1 text-[10px]" style={{ color: COLORS.muted }}>
+                  Danh mục chỉ lọc kết quả AI • Ưu đãi đối tác đang dùng dữ liệu demo.
                 </Text>
               </View>
 
-              {/* LIST TITLE */}
-
-              <View className="mb-3 mt-4 flex-row items-center justify-between">
-                <Text
-                  className="text-[16px] font-extrabold"
-                  style={{
-                    color: COLORS.text,
-                  }}
-                >
-                  Địa điểm AI gợi ý
-                </Text>
-
-                <Text
-                  className="text-[11px]"
-                  style={{
-                    color: COLORS.muted,
-                  }}
-                >
-                  Vuốt để xem
-                </Text>
+              <View className="mb-3 flex-row" style={{ gap: 10 }}>
+                <View className="min-w-0 flex-1 rounded-2xl border border-[#DDEDE7] bg-[#F4FBF8] px-3 py-3">
+                  <View className="flex-row items-center">
+                    <MaterialCommunityIcons name="creation" size={16} color={COLORS.primaryDark} />
+                    <Text className="ml-1.5 text-[13px] font-extrabold" style={{ color: COLORS.text }}>
+                      Địa điểm đề xuất
+                    </Text>
+                  </View>
+                  <Text className="mt-1 text-[10px]" style={{ color: COLORS.muted }}>
+                    {visiblePlaces.length} địa điểm • Theo sở thích
+                  </Text>
+                </View>
+                <View className="min-w-0 flex-1 rounded-2xl border border-[#E4E9ED] bg-[#F6F8FA] px-3 py-3">
+                  <View className="flex-row items-center">
+                    <MaterialCommunityIcons name="storefront-outline" size={16} color={COLORS.primaryDark} />
+                    <Text className="ml-1.5 text-[13px] font-extrabold" style={{ color: COLORS.text }}>
+                      Đối tác
+                    </Text>
+                  </View>
+                  <Text className="mt-1 text-[10px]" style={{ color: COLORS.muted }}>
+                    {displayPartnerAds.length} dịch vụ • Tài trợ
+                  </Text>
+                </View>
               </View>
             </View>
           }
+          renderItem={({ item }) => (
+            <View className="mb-3 flex-row" style={{ gap: 10 }}>
+              {item.place ? (
+                <MatchCard
+                  place={item.place}
+                  index={item.aiIndex}
+                  favorite={favorites.includes(item.place.id)}
+                  inPlan={planIds.includes(item.place.id)}
+                  active={item.place.id === activeId}
+                  onPress={() => {
+                    if (!item.place) return;
+                    setActiveId(item.place.id);
+                    focusMap(item.place);
+                    setSelectedId(item.place.id);
+                  }}
+                  onToggleFavorite={() => item.place && toggle(setFavorites, item.place.id)}
+                  onTogglePlan={() => item.place && toggle(setPlanIds, item.place.id)}
+                />
+              ) : (
+                <EmptyColumnCard label="Không có địa điểm AI trong danh mục này" />
+              )}
 
-          renderItem={({
-                         item,
-                         index,
-                       }) => (
-            <SuggestionCard
-              place={item}
-              index={index}
-              best={
-                item.id ===
-                places[0]?.id
-              }
-              favorite={
-                favorites.includes(
-                  item.id
-                )
-              }
-              inPlan={
-                planIds.includes(
-                  item.id
-                )
-              }
-              active={
-                item.id ===
-                activeId
-              }
-              onPress={() => {
-                setActiveId(
-                  item.id
-                );
-
-                focusMap(item);
-
-                setSelectedId(
-                  item.id
-                );
-              }}
-              onToggleFavorite={() =>
-                toggle(
-                  setFavorites,
-                  item.id
-                )
-              }
-            />
+              {item.ad ? (
+                <SponsoredCard ad={item.ad} onPress={() => item.ad && openPartnerAd(item.ad)} />
+              ) : (
+                <EmptyColumnCard label="Đã xem hết ưu đãi được tài trợ" />
+              )}
+            </View>
           )}
-
           ListEmptyComponent={
-            <View className="items-center rounded-xl bg-[#F8F8FF] px-4 py-8">
-              <MaterialCommunityIcons
-                name="map-search-outline"
-                size={36}
-                color="#94B5B6"
-              />
-
-              <Text className="mt-2 text-[12px] text-[#6F8090]">
-                Không có địa điểm phù hợp
-                với danh mục này.
+            <View className="items-center rounded-2xl bg-[#F8F8FF] px-4 py-8">
+              <MaterialCommunityIcons name="map-search-outline" size={32} color="#94B5B6" />
+              <Text className="mt-2 text-[12px]" style={{ color: COLORS.muted }}>
+                Chưa có kết quả để hiển thị.
               </Text>
             </View>
           }
