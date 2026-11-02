@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -13,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, type LatLng } from 'react-native-maps';
 import * as Location from 'expo-location';
+
+import StopReviewCard, { type StopReview } from './StopReviewCard';
 
 // ==================== TYPES ====================
 
@@ -30,6 +34,8 @@ type TripLiveMapScreenProps = {
   dayNumber: number;
   dayTitle: string;
   activities: TripMapActivity[];
+  /** Gọi khi người dùng gửi nhận xét cho một điểm dừng */
+  onSubmitReview?: (review: StopReview) => void;
 };
 
 type MapStop = TripMapActivity & {
@@ -94,6 +100,7 @@ export default function TripLiveMapScreen({
                                             dayNumber,
                                             dayTitle,
                                             activities,
+                                            onSubmitReview,
                                           }: TripLiveMapScreenProps) {
   const mapRef = useRef<MapView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -102,6 +109,8 @@ export default function TripLiveMapScreen({
   const [gpsAllowed, setGpsAllowed] = useState(false);
   const [myLocation, setMyLocation] = useState<LatLng | null>(null);
   const [gpsMessage, setGpsMessage] = useState('Đang kiểm tra GPS');
+  // Nhận xét đã gửi, theo id điểm dừng (chưa có backend nên lưu tạm)
+  const [reviews, setReviews] = useState<Record<string, StopReview>>({});
 
   const stops = useMemo<MapStop[]>(
     () =>
@@ -222,6 +231,11 @@ export default function TripLiveMapScreen({
     } catch {
       Alert.alert('Không thể mở bản đồ', 'Hãy kiểm tra ứng dụng bản đồ trên thiết bị.');
     }
+  };
+
+  const handleSubmitReview = (review: StopReview) => {
+    setReviews(previous => ({ ...previous, [review.stopId]: review }));
+    onSubmitReview?.(review);
   };
 
   const markArrived = () => {
@@ -365,7 +379,11 @@ export default function TripLiveMapScreen({
       </View>
 
       {/* BOTTOM SHEET - TƯƠNG TỰ GIAO DIỆN GỌI XE */}
-      <View style={styles.sheetContainer}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.sheetContainer}
+        pointerEvents="box-none"
+      >
         <SafeAreaView edges={['bottom']} style={styles.sheet}>
           <View style={styles.dragHandle} />
 
@@ -438,12 +456,14 @@ export default function TripLiveMapScreen({
             ))}
           </ScrollView>
 
-          <View style={styles.demoInfo}>
-            <MaterialCommunityIcons name="information-outline" size={15} color="#64758A" />
-            <Text style={styles.demoInfoText}>
-              Đường nét đứt và vị trí điểm dừng là dữ liệu demo, chưa phải chỉ đường theo đường phố.
-            </Text>
-          </View>
+          {/* key theo điểm dừng: đổi điểm thì form nhận xét được làm mới */}
+          <StopReviewCard
+            key={currentStop.id}
+            stopId={currentStop.id}
+            stopTitle={currentStop.title}
+            savedReview={reviews[currentStop.id]}
+            onSubmit={handleSubmitReview}
+          />
 
           <View style={styles.buttonRow}>
             <Pressable onPress={openExternalDirections} style={styles.outlineButton}>
@@ -466,7 +486,7 @@ export default function TripLiveMapScreen({
             </Pressable>
           </View>
         </SafeAreaView>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -540,13 +560,6 @@ const styles = StyleSheet.create({
   },
   selectedChip: { backgroundColor: C.darkTeal },
   stopChipText: { fontSize: 11, fontWeight: '800', color: C.navy },
-  demoInfo: {
-    backgroundColor: '#F3F6FC', borderRadius: 12,
-    flexDirection: 'row', alignItems: 'flex-start', padding: 10,
-  },
-  demoInfoText: {
-    flex: 1, marginLeft: 6, fontSize: 10.2, lineHeight: 15, color: '#64758A',
-  },
   buttonRow: { flexDirection: 'row', gap: 10, paddingTop: 13, paddingBottom: 7 },
   outlineButton: {
     flex: 0.9, height: 51, backgroundColor: C.light, borderRadius: 16,
