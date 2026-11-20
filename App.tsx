@@ -2,7 +2,7 @@
 import './global.css';
 import ProfileChangePasswordScreen from './src/screens/profile/ProfileChangePasswordScreen';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -44,6 +44,10 @@ import {
 
 import type { AppTab } from './src/components/BottomTabBar';
 import type { RootStackParamList } from './src/types/featureRoutes';
+import type { TripPlan } from './src/screens/trips/PlanTripScreen';
+import type { AiRecommendationResponse } from './src/services/tripFlowApi';
+import { toIsoDate } from './src/screens/trips/planTripMapping';
+import { loadAccessToken } from './src/services/authToken';
 
 type AppRoutes = RootStackParamList & {
   MainTabs: { tab?: AppTab } | undefined;
@@ -51,8 +55,10 @@ type AppRoutes = RootStackParamList & {
   BusinessOwnerFlow: undefined;
   TravelPreferences: undefined;
   PlanTrip: undefined;
-  GeneratingTrip: { destinationId: string; days: number; interests: string[] };
-  SuggestedPlaces: { destinationId: string; interests: string[] };
+  // startDate đi qua route params dạng ISO string (yyyy-MM-dd) vì Date không an toàn để
+  // truyền qua React Navigation params (không serializable).
+  GeneratingTrip: Omit<TripPlan, 'startDate'> & { startDate: string };
+  SuggestedPlaces: { planId: number; recommendation: AiRecommendationResponse };
 };
 
 const Stack = createNativeStackNavigator<AppRoutes>();
@@ -268,9 +274,21 @@ function MainTabsScreen({
 }
 
 export default function App() {
-  // Sở thích du lịch của người dùng (chưa có backend nên lưu tạm ở đây)
-  const [travelPreferences, setTravelPreferences] =
-    useState<TravelPreferences>(emptyPreferences);
+  // Sở thích trải nghiệm mock của riêng PlanTripScreen (ô chip tại chỗ, không còn ảnh hưởng
+  // categoryCodes gửi lên Backend — xem planTripMapping.ts). Màn TravelPreferences thật (UC-006)
+  // tự tải/tự lưu qua API, không còn đọc/ghi state này.
+  const [travelPreferences] = useState<TravelPreferences>(emptyPreferences);
+
+  // Đọc access token đã lưu (expo-secure-store) trước khi vào app, để các API cần đăng nhập
+  // (ví dụ gợi ý AI) gắn đúng Bearer token ngay từ màn đầu nếu người dùng đã đăng nhập trước đó.
+  const [authReady, setAuthReady] = useState(false);
+  useEffect(() => {
+    void loadAccessToken().finally(() => setAuthReady(true));
+  }, []);
+
+  if (!authReady) {
+    return <View style={{ flex: 1, backgroundColor: '#FFFFFF' }} />;
+  }
 
   return (
     <NavigationContainer>
@@ -338,18 +356,7 @@ export default function App() {
 
         <Stack.Screen name="TravelPreferences">
           {({ navigation }) => (
-            <TravelPreferencesScreen
-              initialPreferences={travelPreferences}
-              onBack={() => navigation.goBack()}
-              onComplete={preferences => {
-                setTravelPreferences(preferences);
-                Alert.alert(
-                  'Đã lưu sở thích',
-                  'SmartTravel sẽ gợi ý điểm đến và lịch trình phù hợp hơn với bạn.'
-                );
-                navigation.goBack();
-              }}
-            />
+            <TravelPreferencesScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
 
@@ -360,9 +367,8 @@ export default function App() {
               onBack={() => navigation.goBack()}
               onSubmit={plan =>
                 navigation.navigate('GeneratingTrip', {
-                  destinationId: plan.destinationId,
-                  days: plan.days,
-                  interests: plan.interests,
+                  ...plan,
+                  startDate: toIsoDate(plan.startDate),
                 })
               }
             />
@@ -375,15 +381,11 @@ export default function App() {
         >
           {({ navigation, route }) => (
             <GeneratingTripScreen
-              destinationId={route.params.destinationId}
-              days={route.params.days}
+              plan={{ ...route.params, startDate: new Date(`${route.params.startDate}T00:00:00`) }}
               onCancel={() => navigation.goBack()}
               // Thay màn Đang tạo bằng màn Gợi ý để nút Back quay về Lập kế hoạch
-              onDone={() =>
-                navigation.replace('SuggestedPlaces', {
-                  destinationId: route.params.destinationId,
-                  interests: route.params.interests,
-                })
+              onDone={(planId, recommendation) =>
+                navigation.replace('SuggestedPlaces', { planId, recommendation })
               }
             />
           )}
@@ -392,13 +394,13 @@ export default function App() {
         <Stack.Screen name="SuggestedPlaces">
           {({ navigation, route }) => (
             <SuggestedPlacesScreen
-              destinationId={route.params.destinationId}
-              interests={route.params.interests}
+              planId={route.params.planId}
+              initialRecommendation={route.params.recommendation}
               onBack={() => navigation.goBack()}
-              onSavePlan={placeIds => {
+              onSavePlan={selectedCount => {
                 Alert.alert(
                   'Đã lưu kế hoạch',
-                  `Đã thêm ${placeIds.length} địa điểm vào chuyến đi của bạn.`
+                  `Đã thêm ${selectedCount} địa điểm vào chuyến đi của bạn.`
                 );
                 // Bỏ các màn lập kế hoạch khỏi lịch sử
                 navigation.reset({
