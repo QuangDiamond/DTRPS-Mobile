@@ -16,15 +16,18 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { planDestinations } from '../../constants/planTrip';
+import type { TripPlan } from './PlanTripScreen';
+import { tripPlanToCreateInput } from './planTripMapping';
+import { tripFlowApi, type AiRecommendationResponse } from '../../services/tripFlowApi';
+import { errorMessage } from '../../services/httpClient';
 
 // ==================== TYPES ====================
 
 type GeneratingTripScreenProps = {
-  destinationId: string;
-  days: number;
+  plan: TripPlan;
   onCancel: () => void;
-  /** Gọi khi người dùng bấm xem địa điểm gợi ý sau khi tạo xong */
-  onDone: () => void;
+  /** Gọi khi đã tạo Travel Plan thật + lấy xong gợi ý AI từ Backend. */
+  onDone: (planId: number, recommendation: AiRecommendationResponse) => void;
 };
 
 // ==================== CONFIG ====================
@@ -136,18 +139,25 @@ function GlobeAnimation({ finished }: { finished: boolean }) {
 // ==================== MAIN SCREEN ====================
 
 export default function GeneratingTripScreen({
-  destinationId,
-  days,
+  plan,
   onCancel,
   onDone,
 }: GeneratingTripScreenProps) {
+  const { destinationId, days } = plan;
   const destination =
     planDestinations.find((item) => item.id === destinationId) ?? planDestinations[0];
 
   const [elapsed, setElapsed] = useState(0);
   const progressBar = useRef(new Animated.Value(0)).current;
 
-  // Giả lập tiến trình tạo lịch trình
+  // Dữ liệu thật từ Backend: tạo Travel Plan rồi lấy gợi ý AI (RecommendationController).
+  const [planId, setPlanId] = useState<number | null>(null);
+  const [recommendation, setRecommendation] = useState<AiRecommendationResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const dataReady = planId !== null && recommendation !== null;
+
+  // Giả lập tiến trình hiển thị (animation), đồng thời gọi API thật phía dưới.
   useEffect(() => {
     const startedAt = Date.now();
     const timer = setInterval(() => {
@@ -164,11 +174,42 @@ export default function GeneratingTripScreen({
     }).start();
 
     return () => clearInterval(timer);
-  }, [progressBar]);
+  }, [progressBar, retryCount]);
+
+  useEffect(() => {
+    let active = true;
+    setError(null);
+    setPlanId(null);
+    setRecommendation(null);
+
+    const run = async () => {
+      try {
+        const input = await tripPlanToCreateInput(plan);
+        if (!active) return;
+        const created = await tripFlowApi.createPlan(input);
+        if (!active) return;
+        setPlanId(created.planId);
+
+        const recommended = await tripFlowApi.recommendedPlaces(created.planId);
+        if (!active) return;
+        setRecommendation(recommended);
+      } catch (caught) {
+        if (active) setError(errorMessage(caught));
+      }
+    };
+
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [retryCount]);
 
   const ratio = elapsed / TOTAL_DURATION;
-  const finished = ratio >= 1;
-  const percent = Math.round(Easing.out(Easing.quad)(ratio) * 100);
+  const animationDone = ratio >= 1;
+  const finished = animationDone && dataReady && !error;
+  const percent = dataReady
+    ? Math.round(Easing.out(Easing.quad)(ratio) * 100)
+    : Math.min(95, Math.round(Easing.out(Easing.quad)(ratio) * 100));
   const currentStep = Math.min(steps.length, Math.floor(ratio * steps.length));
   const doneSteps = finished ? steps.length : currentStep;
 
@@ -182,6 +223,17 @@ export default function GeneratingTripScreen({
       { text: 'Tiếp tục tạo', style: 'cancel' },
       { text: 'Hủy', style: 'destructive', onPress: onCancel },
     ]);
+  };
+
+  const handleDone = () => {
+    if (!finished || planId === null || !recommendation) return;
+    onDone(planId, recommendation);
+  };
+
+  const retry = () => {
+    setElapsed(0);
+    progressBar.setValue(0);
+    setRetryCount((value) => value + 1);
   };
 
   return (
@@ -215,8 +267,31 @@ export default function GeneratingTripScreen({
           className="mt-3 text-center text-[21px] font-extrabold leading-7"
           style={{ color: COLORS.text }}
         >
-          {finished ? 'Hành trình của bạn đã sẵn sàng!' : 'Đang chuẩn bị hành trình hoàn hảo...'}
+          {error
+            ? 'Chưa thể tạo kế hoạch'
+            : finished
+              ? 'Hành trình của bạn đã sẵn sàng!'
+              : 'Đang chuẩn bị hành trình hoàn hảo...'}
         </Text>
+
+        {error && (
+          <View
+            className="mt-3 rounded-2xl p-3"
+            style={{ borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}
+          >
+            <Text className="text-[12px]" style={{ color: '#B91C1C' }}>
+              {error}
+            </Text>
+            <Pressable
+              onPress={retry}
+              className="mt-2 self-start rounded-full bg-white px-4 py-2"
+            >
+              <Text className="text-[12px] font-bold" style={{ color: COLORS.primaryDark }}>
+                Thử lại
+              </Text>
+            </Pressable>
+          </View>
+        )}
         <Text
           className="mt-2 text-center text-[12px] leading-5"
           style={{ color: COLORS.muted }}
@@ -376,7 +451,7 @@ export default function GeneratingTripScreen({
 
       <View className="px-5 pb-3 pt-2">
         <Pressable
-          onPress={onDone}
+          onPress={handleDone}
           disabled={!finished}
           className="h-12 flex-row items-center justify-center rounded-full active:opacity-80"
           style={{ backgroundColor: finished ? COLORS.primaryDark : COLORS.lightPurple }}
