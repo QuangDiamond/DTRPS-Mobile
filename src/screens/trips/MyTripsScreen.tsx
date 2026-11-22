@@ -1,611 +1,391 @@
-import React, { useMemo, useState } from 'react';
-import {
-  Alert,
-  ImageBackground,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  Text,
-  View,
-} from 'react-native';
-
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Pressable, Share, View } from 'react-native';
+import { Text } from '../../ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ClientApiError, errorMessage } from '../../api/http';
+import { tripFlowApi, type PlanStatus, type TravelPlanResponse } from '../../api/tripFlowApi';
+import { useAuth } from '../../auth/AuthProvider';
+import { LoginRequired } from '../../components/LoginRequired';
+import { useRootNav } from '../../navigation/hooks';
+import { colors, shadow } from '../../theme';
+import { Sheet } from '../../ui/Bits';
+import { Button } from '../../ui/Button';
+import { Icon } from '../../ui/Icon';
+import { EmptyState, ErrorState, Loading } from '../../ui/States';
+import { Toast, useToast } from '../../ui/Toast';
+import { countDays, formatDate, formatNumber } from '../../utils/format';
+import {
+  canDeletePlan,
+  canEditPlan,
+  isPlanFinished,
+  PLAN_STATUS_ACTION,
+  PLAN_STATUS_INFO,
+  planStatusInfo,
+} from '../../utils/planStatus';
 
-import AppHeader from '../../components/AppHeader';
-import BottomTabBar, {
-  type AppTab,
-} from '../../components/BottomTabBar';
-
-import { trips as mockTrips, type Trip } from '../../constants/trips';
-
-// ==================== TYPES ====================
-
-type TripFilter = 'upcoming' | 'completed';
-
-type MyTripsScreenProps = {
-  onTabPress?: (tab: AppTab) => void;
-  onTripPress?: (tripId: string) => void;
-  onEditTripPress?: (tripId: string) => void;
-  onCreateTripPress?: () => void;
-};
-
-// ==================== COLORS ====================
-
-const COLORS = {
-  primary: '#087A78',
-  primaryDark: '#075C66',
-  text: '#13364A',
-  muted: '#72818C',
-  background: '#F8F8FF',
-  lightPurple: '#EBEDFF',
-  mint: '#C3F8F0',
-  white: '#FFFFFF',
-};
-
-const filters: { id: TripFilter; label: string }[] = [
-  { id: 'upcoming', label: 'Sắp tới' },
-  { id: 'completed', label: 'Đã đi' },
+type TripFilter = 'ongoing' | 'finished';
+const FILTERS: { id: TripFilter; label: string }[] = [
+  { id: 'ongoing', label: 'Chưa hoàn tất' },
+  { id: 'finished', label: 'Đã kết thúc' },
 ];
 
-// Trip nào thuộc tab nào
-const matchFilter = (trip: Trip, filter: TripFilter) => {
-  if (filter === 'upcoming') {
-    return (
-      trip.status === 'upcoming' ||
-      trip.status === 'planned' ||
-      trip.status === 'draft'
-    );
-  }
-  return trip.status === filter;
-};
-
-// ==================== TRIP IMAGE ====================
-
-function TripImage({
-  trip,
-  height,
-  onMorePress,
-}: {
-  trip: Trip;
-  height: number;
-  onMorePress: () => void;
-}) {
-  const chip = {
-    upcoming: { icon: 'circle' as const, bg: '#D7FBF3', color: '#06695F' },
-    planned: { icon: 'calendar-blank-outline' as const, bg: '#FFFFFF', color: COLORS.text },
-    draft: { icon: 'pencil-outline' as const, bg: '#FFE8C7', color: '#8A4B00' },
-    saved: { icon: 'bookmark-outline' as const, bg: '#FFFFFF', color: COLORS.primary },
-    completed: { icon: 'check-circle-outline' as const, bg: '#E3F6E5', color: '#23793A' },
-  }[trip.status];
-
-  return (
-    <ImageBackground
-      source={{ uri: trip.image }}
-      style={{ height }}
-      imageStyle={{ borderRadius: 18 }}
-    >
-      <LinearGradient
-        colors={['rgba(0,0,0,0.05)', 'rgba(0,0,0,0.65)']}
-        style={{
-          flex: 1,
-          borderRadius: 18,
-          padding: 12,
-          justifyContent: 'space-between',
-        }}
-      >
-        <View className="flex-row items-start justify-between">
-          <View
-            className="flex-row items-center rounded-full px-2.5 py-1"
-            style={{ backgroundColor: chip.bg }}
-          >
-            <MaterialCommunityIcons
-              name={chip.icon}
-              size={trip.status === 'upcoming' ? 8 : 12}
-              color={chip.color}
-            />
-            <Text
-              className="ml-1 text-[10px] font-bold"
-              style={{ color: chip.color }}
-            >
-              {trip.statusLabel}
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={onMorePress}
-            hitSlop={8}
-            className="h-7 w-7 items-center justify-center rounded-full bg-black/40"
-          >
-            <MaterialCommunityIcons
-              name="dots-vertical"
-              size={18}
-              color="white"
-            />
-          </Pressable>
-        </View>
-
-        <View>
-          <Text
-            numberOfLines={2}
-            className="text-[17px] font-extrabold text-white"
-          >
-            {trip.title}
-          </Text>
-          <View className="mt-1 flex-row items-center">
-            <MaterialCommunityIcons
-              name="map-marker"
-              size={13}
-              color="white"
-            />
-            <Text className="ml-1 text-[11px] font-semibold text-white">
-              {trip.location} • {trip.duration}
-            </Text>
-          </View>
-        </View>
-      </LinearGradient>
-    </ImageBackground>
-  );
-}
-
-// ==================== SMALL PIECES ====================
-
-function EditButton({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      className="ml-2.5 h-11 w-11 items-center justify-center rounded-full active:opacity-70"
-      style={{ backgroundColor: COLORS.lightPurple }}
-      accessibilityLabel="Chỉnh sửa chuyến đi"
-    >
-      <MaterialCommunityIcons
-        name="pencil-outline"
-        size={19}
-        color={COLORS.primaryDark}
-      />
-    </Pressable>
-  );
-}
-
-function IconText({
-  icon,
-  text,
-  bold,
-}: {
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-  text: string;
-  bold?: boolean;
-}) {
-  return (
-    <View className="flex-row items-center">
-      <MaterialCommunityIcons name={icon} size={15} color={COLORS.muted} />
-      <Text
-        className={`ml-1.5 text-[12px] ${bold ? 'font-extrabold' : 'font-medium'}`}
-        style={{ color: COLORS.text }}
-      >
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-// ==================== TRIP CARD ====================
+const money = (amount: number | null, currency: string, empty: string) =>
+  amount === null || amount === undefined ? empty : `${formatNumber(amount)} ${currency}`;
 
 function TripCard({
-  trip,
-  onPress,
-  onEdit,
-  onMore,
+  plan,
+  busy,
+  opening,
+  onOpen,
+  onMenu,
+  onShare,
+  onSelected,
+  onSuggestions,
 }: {
-  trip: Trip;
-  onPress: () => void;
-  onEdit: () => void;
-  onMore: () => void;
+  plan: TravelPlanResponse;
+  busy: boolean;
+  opening: boolean;
+  onOpen: () => void;
+  onMenu: () => void;
+  onShare: () => void;
+  onSelected: () => void;
+  onSuggestions: () => void;
 }) {
-  // ---------- Chuyến sắp khởi hành: thẻ đầy đủ ----------
-  if (trip.status === 'upcoming') {
-    return (
-      <View className="mb-4 rounded-[22px] bg-white p-2.5">
-        <TripImage trip={trip} height={170} onMorePress={onMore} />
-
-        <View className="px-1.5 pt-3">
-          <View
-            className="flex-row rounded-2xl px-3 py-2.5"
-            style={{ backgroundColor: '#F3F4FF' }}
-          >
-            {[
-              { icon: 'calendar-range' as const, label: 'Thời gian', value: trip.dateRange },
-              { icon: 'account-group-outline' as const, label: 'Khách đi', value: trip.guests },
-            ].map((item) => (
-              <View key={item.label} className="flex-1 flex-row items-center">
-                <View
-                  className="h-8 w-8 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: COLORS.mint }}
-                >
-                  <MaterialCommunityIcons
-                    name={item.icon}
-                    size={17}
-                    color={COLORS.primary}
-                  />
-                </View>
-                <View className="ml-2">
-                  <Text className="text-[10px]" style={{ color: COLORS.muted }}>
-                    {item.label}
-                  </Text>
-                  <Text
-                    className="text-[12px] font-bold"
-                    style={{ color: COLORS.text }}
-                  >
-                    {item.value}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-
-          <View className="mt-3">
-            <IconText icon="cash-multiple" text={`Dự toán: ${trip.budget}`} bold />
-          </View>
-
-          <View className="mt-2 flex-row justify-between">
-            <IconText icon="map-marker-path" text={`${trip.placeCount} địa điểm trong lịch`} />
-            {!!trip.hotelBooked && (
-              <IconText icon="bed-outline" text={`Đã đặt ${trip.hotelBooked} khách sạn`} />
-            )}
-          </View>
-
-          <View className="mb-1 mt-3.5 flex-row items-center">
-            <Pressable
-              onPress={onPress}
-              className="h-11 flex-1 flex-row items-center justify-center rounded-full active:opacity-80"
-              style={{ backgroundColor: COLORS.primaryDark }}
-            >
-              <Text className="text-[13px] font-bold text-white">
-                Xem chi tiết lịch trình
-              </Text>
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={17}
-                color="white"
-                style={{ marginLeft: 6 }}
-              />
-            </Pressable>
-            <EditButton onPress={onEdit} />
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // ---------- Bản nháp ----------
-  if (trip.status === 'draft') {
-    return (
-      <View className="mb-4 rounded-[22px] bg-white p-2.5">
-        <TripImage trip={trip} height={135} onMorePress={onMore} />
-
-        <View className="px-1.5 pt-3">
-          <View className="flex-row items-center justify-between">
-            <IconText icon="calendar-blank-outline" text={`${trip.dateRange} • ${trip.guests}`} />
-            <View
-              className="rounded-full px-2.5 py-1"
-              style={{ backgroundColor: COLORS.lightPurple }}
-            >
-              <Text
-                className="text-[10px] font-bold"
-                style={{ color: '#445577' }}
-              >
-                {trip.placeCount} địa điểm đã chọn
-              </Text>
-            </View>
-          </View>
-
-          <Pressable
-            onPress={onEdit}
-            className="mb-1 mt-3 h-11 flex-row items-center justify-center rounded-full active:opacity-70"
-            style={{ backgroundColor: COLORS.lightPurple }}
-          >
-            <MaterialCommunityIcons
-              name="file-document-edit-outline"
-              size={17}
-              color={COLORS.primaryDark}
-            />
-            <Text
-              className="ml-1.5 text-[13px] font-bold"
-              style={{ color: COLORS.primaryDark }}
-            >
-              Tiếp tục chỉnh sửa
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
-  // ---------- Đã lên lịch / Đã lưu / Đã đi: thẻ gọn ----------
-  const isCompleted = trip.status === 'completed';
-
+  const status = planStatusInfo(plan.status);
+  const hasMenu = canEditPlan(plan) || canDeletePlan(plan) || (plan.allowedNextStatuses ?? []).length > 0;
   return (
-    <View className="mb-4 rounded-[22px] bg-white p-2.5">
-      <TripImage trip={trip} height={145} onMorePress={onMore} />
+    <View style={shadow.card} className="rounded-[22px] bg-white p-2.5">
+      <View className="h-[150px] justify-between overflow-hidden rounded-[18px] bg-[#0891B2] p-3">
+        <View className="absolute -right-6 -top-8 opacity-15">
+          <Icon name="travel-explore" size={170} color="#FFFFFF" />
+        </View>
+        <View className="flex-row items-start justify-between">
+          <View style={{ backgroundColor: status.bg }} className="flex-row items-center gap-1 rounded-full px-2.5 py-1">
+            <Icon name={status.icon} size={14} color={status.fg} />
+            <Text style={{ color: status.fg }} className="text-[10.5px] font-bold">
+              {status.label}
+            </Text>
+          </View>
+          <View className="flex-row gap-1.5">
+            <Pressable onPress={onShare} accessibilityLabel={`Chia sẻ ${plan.title}`} className="h-8 w-8 items-center justify-center rounded-full bg-white/20">
+              <Icon name="share" size={17} color="#FFFFFF" />
+            </Pressable>
+            {hasMenu ? (
+              <Pressable onPress={onMenu} disabled={busy} accessibilityLabel={`Thao tác với ${plan.title}`} className="h-8 w-8 items-center justify-center rounded-full bg-white/20">
+                {busy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name="more-vert" size={18} color="#FFFFFF" />}
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+        <View>
+          <Text numberOfLines={2} className="text-[17px] font-extrabold leading-6 text-white">
+            {plan.title}
+          </Text>
+          <View className="mt-1 flex-row items-center gap-1">
+            <Icon name="location-on" size={15} color="#FFFFFF" />
+            <Text className="text-[11.5px] font-semibold text-white/90">
+              {plan.destination} · {countDays(plan.startDate, plan.endDate)} ngày
+            </Text>
+          </View>
+        </View>
+      </View>
 
       <View className="px-1.5 pt-3">
-        <View className="flex-row items-center justify-between">
-          <IconText
-            icon={isCompleted ? 'calendar-check-outline' : 'account-group-outline'}
-            text={isCompleted ? trip.dateRange ?? '' : trip.guests}
-          />
-          {!!trip.budget && (
-            <IconText icon="cash-multiple" text={trip.budget} bold />
-          )}
+        <View className="flex-row gap-2 rounded-2xl bg-[#F3F7FA] p-3">
+          <View className="flex-1 flex-row items-start gap-2">
+            <Icon name="date-range" size={18} color={colors.primary} />
+            <View>
+              <Text className="text-[10px] text-[#72818C]">Thời gian</Text>
+              <Text className="text-[11.5px] font-bold text-[#13364A]">{formatDate(plan.startDate)}</Text>
+              <Text className="text-[10px] text-[#72818C]">đến {formatDate(plan.endDate)}</Text>
+            </View>
+          </View>
+          <View className="flex-1 flex-row items-start gap-2">
+            <Icon name="groups" size={18} color={colors.primary} />
+            <View>
+              <Text className="text-[10px] text-[#72818C]">Số người</Text>
+              <Text className="text-[12px] font-bold text-[#13364A]">{plan.groupSize} người</Text>
+            </View>
+          </View>
         </View>
-
-        <View className="mb-1 mt-3 flex-row items-center">
-          <Pressable
-            onPress={onPress}
-            className="h-11 flex-1 flex-row items-center justify-center rounded-full active:opacity-70"
-            style={{ backgroundColor: '#9EF0E2' }}
-          >
-            <Text
-              className="text-[13px] font-bold"
-              style={{ color: COLORS.primaryDark }}
-            >
-              {isCompleted ? 'Xem lại hành trình' : 'Xem chi tiết'}
+        <View className="mt-3 flex-row flex-wrap gap-x-4 gap-y-1.5">
+          <View className="flex-row items-center gap-1">
+            <Icon name="payments" size={16} color={colors.primary} />
+            <Text className="text-[12px] font-semibold text-[#13364A]">
+              {money(plan.estimatedCost, plan.currency, 'Chưa có chi phí ước tính')}
             </Text>
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={18}
-              color={COLORS.primaryDark}
-            />
+          </View>
+          <View className="flex-row items-center gap-1">
+            <Icon name="category" size={16} color={colors.primary} />
+            <Text className="text-[11.5px] text-[#72818C]">{plan.categoryCodes?.length ?? 0} loại hình</Text>
+          </View>
+        </View>
+        <View className="mb-1 mt-3.5 flex-row items-center gap-2">
+          <Pressable
+            onPress={onOpen}
+            disabled={opening}
+            className="h-11 flex-1 flex-row items-center justify-center gap-1.5 rounded-full bg-[#0E7490] px-3"
+          >
+            {opening ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name="route" size={18} color="#FFFFFF" />}
+            <Text className="text-[12.5px] font-bold text-white">{opening ? 'Đang kiểm tra...' : 'Mở chuyến đi'}</Text>
           </Pressable>
-          {!isCompleted && <EditButton onPress={onEdit} />}
+          <Pressable onPress={onSelected} accessibilityLabel={`Địa điểm đã chọn của ${plan.title}`} className="h-11 w-11 items-center justify-center rounded-full bg-[#ECFEFF]">
+            <Icon name="shopping-basket" size={20} color={colors.primaryStrong} />
+          </Pressable>
+          <Pressable onPress={onSuggestions} accessibilityLabel={`Danh sách địa điểm cho ${plan.title}`} className="h-11 w-11 items-center justify-center rounded-full bg-[#ECFEFF]">
+            <Icon name="add-location-alt" size={20} color={colors.primaryStrong} />
+          </Pressable>
         </View>
       </View>
     </View>
   );
 }
 
-// ==================== MAIN SCREEN ====================
+/** Danh sách Travel Plan thật từ Backend — giống MyTripsPage của web */
+export default function MyTripsScreen() {
+  const { user } = useAuth();
+  const navigation = useRootNav();
+  const [toast, showToast] = useToast();
+  const [plans, setPlans] = useState<TravelPlanResponse[]>([]);
+  const [filter, setFilter] = useState<TripFilter>('ongoing');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [openingPlanId, setOpeningPlanId] = useState<number | null>(null);
+  const [busyPlanId, setBusyPlanId] = useState<number | null>(null);
+  const [menuPlan, setMenuPlan] = useState<TravelPlanResponse | null>(null);
 
-export default function MyTripsScreen({
-  onTabPress,
-  onTripPress,
-  onEditTripPress,
-  onCreateTripPress,
-}: MyTripsScreenProps) {
-  const [filter, setFilter] = useState<TripFilter>('upcoming');
-  const [trips, setTrips] = useState<Trip[]>(mockTrips);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      let active = true;
+      setError(null);
+      tripFlowApi
+        .plans()
+        .then((result) => active && setPlans(result))
+        .catch((caught: unknown) => active && setError(errorMessage(caught)))
+        .finally(() => {
+          if (!active) return;
+          setLoading(false);
+          setRefreshing(false);
+        });
+      return () => {
+        active = false;
+      };
+    }, [user, retryCount]),
+  );
 
-  const showComingSoon = (title: string) => {
-    Alert.alert(title, 'Chức năng đang được phát triển.');
+  if (!user) {
+    return <LoginRequired title="Chuyến đi của bạn" message="Đăng nhập để tạo kế hoạch, nhận gợi ý AI và theo dõi lịch trình." />;
+  }
+
+  const counts: Record<TripFilter, number> = {
+    ongoing: plans.filter((plan) => !isPlanFinished(plan)).length,
+    finished: plans.filter(isPlanFinished).length,
   };
+  const visiblePlans = plans.filter((plan) => (filter === 'finished' ? isPlanFinished(plan) : !isPlanFinished(plan)));
 
-  const handleTabPress = (tab: AppTab) => {
-    if (onTabPress) {
-      onTabPress(tab);
-    } else {
-      showComingSoon('Điều hướng');
+  // Backend không đổi status khi tạo itinerary → kiểm tra lịch trình đang dùng (giống web)
+  const openPlan = async (plan: TravelPlanResponse) => {
+    if (openingPlanId !== null) return;
+    setOpeningPlanId(plan.planId);
+    try {
+      await tripFlowApi.activeItinerary(plan.planId);
+      navigation.navigate('Itinerary', { planId: plan.planId });
+    } catch (caught) {
+      if (caught instanceof ClientApiError && caught.status === 404) {
+        navigation.navigate('SelectedPlaces', { planId: plan.planId });
+      } else {
+        showToast(errorMessage(caught));
+      }
+    } finally {
+      setOpeningPlanId(null);
     }
   };
 
-  const counts = useMemo(
-    () => ({
-      // Bản nháp không tính vào số chuyến sắp tới
-      upcoming: trips.filter(
-        (trip) => trip.status === 'upcoming' || trip.status === 'planned'
-      ).length,
-      completed: trips.filter((trip) => trip.status === 'completed').length,
-    }),
-    [trips]
-  );
-
-  const visibleTrips = trips.filter((trip) => matchFilter(trip, filter));
-
-  const handleTripPress = (trip: Trip) => {
-    if (onTripPress) onTripPress(trip.id);
-    else showComingSoon('Chi tiết chuyến đi');
-  };
-
-  const handleEditTrip = (trip: Trip) => {
-    if (onEditTripPress) onEditTripPress(trip.id);
-    else showComingSoon('Chỉnh sửa chuyến đi');
-  };
-
-  const handleCreateTrip = () => {
-    if (onCreateTripPress) onCreateTripPress();
-    else showComingSoon('Lên lịch mới');
-  };
-
-  const handleMore = (trip: Trip) => {
-    Alert.alert(trip.title, undefined, [
-      { text: 'Chia sẻ', onPress: () => showComingSoon('Chia sẻ chuyến đi') },
+  const changeStatus = (plan: TravelPlanResponse, status: PlanStatus) => {
+    const action = PLAN_STATUS_ACTION[status];
+    Alert.alert(action.label, action.confirm, [
+      { text: 'Hủy', style: 'cancel' },
       {
-        text: 'Xoá chuyến đi',
-        style: 'destructive',
-        onPress: () =>
-          Alert.alert('Xoá chuyến đi', `Bạn chắc chắn muốn xoá "${trip.title}"?`, [
-            { text: 'Hủy', style: 'cancel' },
-            {
-              text: 'Xoá',
-              style: 'destructive',
-              onPress: () =>
-                setTrips((previous) => previous.filter((item) => item.id !== trip.id)),
-            },
-          ]),
+        text: action.label,
+        style: action.danger ? 'destructive' : 'default',
+        onPress: async () => {
+          setBusyPlanId(plan.planId);
+          try {
+            const updated = await tripFlowApi.changeStatus(plan.planId, status);
+            setPlans((current) => current.map((item) => (item.planId === updated.planId ? updated : item)));
+            const label = PLAN_STATUS_INFO[updated.status]?.label ?? updated.status;
+            showToast(
+              isPlanFinished(updated)
+                ? `Đã chuyển “${updated.title}” sang ${label}. Xem trong mục Đã kết thúc.`
+                : `Đã chuyển “${updated.title}” sang ${label}.`,
+            );
+          } catch (caught) {
+            showToast(errorMessage(caught));
+          } finally {
+            setBusyPlanId(null);
+          }
+        },
       },
-      { text: 'Đóng', style: 'cancel' },
     ]);
   };
 
-  const emptyText = {
-    upcoming: 'Bạn chưa có chuyến đi nào sắp tới.',
-    completed: 'Bạn chưa hoàn thành chuyến đi nào.',
-  }[filter];
+  const deletePlan = (plan: TravelPlanResponse) =>
+    Alert.alert('Xóa kế hoạch', `Xóa kế hoạch “${plan.title}”? Thao tác này không hoàn tác được.`, [
+      { text: 'Hủy', style: 'cancel' },
+      {
+        text: 'Xóa',
+        style: 'destructive',
+        onPress: async () => {
+          setBusyPlanId(plan.planId);
+          try {
+            await tripFlowApi.deletePlan(plan.planId);
+            setPlans((current) => current.filter((item) => item.planId !== plan.planId));
+            showToast(`Đã xóa kế hoạch “${plan.title}”.`);
+          } catch (caught) {
+            showToast(errorMessage(caught));
+          } finally {
+            setBusyPlanId(null);
+          }
+        },
+      },
+    ]);
+
+  const sharePlan = (plan: TravelPlanResponse) =>
+    void Share.share({
+      title: plan.title,
+      message: [
+        plan.title,
+        `Điểm đến: ${plan.destination}`,
+        `Thời gian: ${formatDate(plan.startDate)} - ${formatDate(plan.endDate)}`,
+        `Số người: ${plan.groupSize}`,
+        `Ngân sách: ${money(plan.budget, plan.currency, 'Chưa đặt ngân sách')}`,
+      ].join('\n'),
+    });
 
   return (
-    <SafeAreaView
-      edges={['top', 'bottom']}
-      className="flex-1"
-      style={{ backgroundColor: COLORS.background }}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-
-      {/* ================= HEADER ================= */}
-
-      <AppHeader
-        onNotificationPress={() => showComingSoon('Thông báo')}
-        onProfilePress={() => handleTabPress('profile')}
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
+      <FlatList
+        data={loading || error ? [] : visiblePlans}
+        keyExtractor={(item) => String(item.planId)}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 14 }}
+        refreshing={refreshing}
+        onRefresh={() => {
+          setRefreshing(true);
+          setRetryCount((n) => n + 1);
+        }}
+        ListHeaderComponent={
+          <View>
+            <View className="flex-row items-center gap-3">
+              <View className="min-w-0 flex-1">
+                <Text className="text-[22px] font-extrabold text-[#13364A]">Chuyến đi của tôi</Text>
+                <Text className="text-[12px] text-[#72818C]">Các kế hoạch đã lưu trong tài khoản Smart Travel</Text>
+              </View>
+              <Pressable
+                onPress={() => navigation.navigate('PlanTrip')}
+                accessibilityLabel="Tạo chuyến đi mới"
+                className="h-11 w-11 items-center justify-center rounded-full bg-[#0891B2]"
+              >
+                <Icon name="add" size={26} color="#FFFFFF" />
+              </Pressable>
+            </View>
+            <View className="mt-4 flex-row rounded-2xl bg-[#EEF5F7] p-1">
+              {FILTERS.map((item) => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setFilter(item.id)}
+                  className={`flex-1 items-center rounded-xl py-2.5 ${filter === item.id ? 'bg-white' : ''}`}
+                >
+                  <Text className={`text-[13px] font-bold ${filter === item.id ? 'text-[#0E7490]' : 'text-[#72818C]'}`}>
+                    {item.label} ({counts[item.id]})
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <TripCard
+            plan={item}
+            busy={busyPlanId === item.planId}
+            opening={openingPlanId === item.planId}
+            onOpen={() => void openPlan(item)}
+            onMenu={() => setMenuPlan(item)}
+            onShare={() => sharePlan(item)}
+            onSelected={() => navigation.navigate('SelectedPlaces', { planId: item.planId })}
+            onSuggestions={() => navigation.navigate('Suggestions', { planId: item.planId })}
+          />
+        )}
+        ListEmptyComponent={
+          loading ? (
+            <Loading label="Đang tải chuyến đi…" />
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => setRetryCount((n) => n + 1)} />
+          ) : (
+            <EmptyState
+              icon="luggage"
+              title={filter === 'finished' ? 'Chưa có chuyến đi nào kết thúc' : 'Chưa có kế hoạch nào'}
+              message={filter === 'finished' ? undefined : 'Tạo kế hoạch đầu tiên, SmartTravel sẽ gợi ý địa điểm phù hợp cho bạn.'}
+              action={filter === 'ongoing' ? <Button title="Tạo chuyến đi" icon="add" onPress={() => navigation.navigate('PlanTrip')} /> : undefined}
+            />
+          )
+        }
       />
 
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: 15,
-          paddingTop: 16,
-          paddingBottom: 28,
-        }}
-      >
-        {/* ================= TITLE ================= */}
-
-        <View className="flex-row items-center">
-          <View className="min-w-0 flex-1">
-            <Text
-              className="text-[22px] font-extrabold"
-              style={{ color: COLORS.text }}
-            >
-              Chuyến đi của tôi
-            </Text>
-            <Text className="mt-0.5 text-[12px]" style={{ color: COLORS.muted }}>
-              Sẵn sàng cho những hành trình đáng nhớ
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={handleCreateTrip}
-            className="h-12 w-12 items-center justify-center rounded-full active:opacity-80"
-            style={{ backgroundColor: COLORS.primaryDark }}
-            accessibilityLabel="Tạo chuyến đi mới"
-          >
-            <MaterialCommunityIcons name="plus" size={26} color="white" />
-          </Pressable>
-        </View>
-
-        {/* ================= FILTER TABS ================= */}
-
-        <View className="mt-4 flex-row rounded-full p-1" style={{ backgroundColor: COLORS.lightPurple }}>
-          {filters.map((item) => {
-            const selected = item.id === filter;
-
-            return (
+      <Sheet visible={menuPlan !== null} onClose={() => setMenuPlan(null)} title={menuPlan?.title ?? ''}>
+        {menuPlan ? (
+          <View className="gap-1 pb-2">
+            {canEditPlan(menuPlan) ? (
               <Pressable
-                key={item.id}
-                onPress={() => setFilter(item.id)}
-                className="flex-1 flex-row items-center justify-center rounded-full py-2"
-                style={{ backgroundColor: selected ? COLORS.white : 'transparent' }}
+                onPress={() => {
+                  const id = menuPlan.planId;
+                  setMenuPlan(null);
+                  navigation.navigate('EditPlan', { planId: id });
+                }}
+                className="flex-row items-center gap-3 rounded-xl px-2 py-3"
               >
-                <Text
-                  className="text-[13px] font-bold"
-                  style={{ color: selected ? COLORS.primaryDark : COLORS.muted }}
-                >
-                  {item.label}
-                </Text>
-                <View
-                  className="ml-1.5 min-w-[20px] items-center rounded-full px-1.5"
-                  style={{ backgroundColor: selected ? COLORS.mint : '#DCDFF5' }}
-                >
-                  <Text
-                    className="text-[11px] font-bold"
-                    style={{ color: selected ? COLORS.primaryDark : COLORS.muted }}
-                  >
-                    {counts[item.id]}
-                  </Text>
-                </View>
+                <Icon name="edit" size={20} color={colors.primary} />
+                <Text className="text-[14px] font-semibold text-[#13364A]">Sửa kế hoạch</Text>
               </Pressable>
-            );
-          })}
-        </View>
-
-        {/* ================= TRIP LIST ================= */}
-
-        <View className="mt-4">
-          {visibleTrips.map((trip) => (
-            <TripCard
-              key={trip.id}
-              trip={trip}
-              onPress={() => handleTripPress(trip)}
-              onEdit={() => handleEditTrip(trip)}
-              onMore={() => handleMore(trip)}
-            />
-          ))}
-
-          {visibleTrips.length === 0 && (
-            <View className="mb-4 items-center rounded-[22px] bg-white px-6 py-10">
-              <View
-                className="h-16 w-16 items-center justify-center rounded-full"
-                style={{ backgroundColor: COLORS.mint }}
+            ) : null}
+            {(menuPlan.allowedNextStatuses ?? []).map((status) => {
+              const action = PLAN_STATUS_ACTION[status];
+              if (!action) return null;
+              return (
+                <Pressable
+                  key={status}
+                  onPress={() => {
+                    const plan = menuPlan;
+                    setMenuPlan(null);
+                    changeStatus(plan, status);
+                  }}
+                  className="flex-row items-center gap-3 rounded-xl px-2 py-3"
+                >
+                  <Icon name={action.icon} size={20} color={action.danger ? '#AD3232' : colors.primary} />
+                  <Text className={`text-[14px] font-semibold ${action.danger ? 'text-[#AD3232]' : 'text-[#13364A]'}`}>{action.label}</Text>
+                </Pressable>
+              );
+            })}
+            {canDeletePlan(menuPlan) ? (
+              <Pressable
+                onPress={() => {
+                  const plan = menuPlan;
+                  setMenuPlan(null);
+                  deletePlan(plan);
+                }}
+                className="flex-row items-center gap-3 rounded-xl px-2 py-3"
               >
-                <MaterialCommunityIcons
-                  name="bag-suitcase-outline"
-                  size={30}
-                  color={COLORS.primary}
-                />
-              </View>
-              <Text
-                className="mt-3 text-center text-[14px] font-bold"
-                style={{ color: COLORS.text }}
-              >
-                {emptyText}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* ================= NEW TRIP CTA ================= */}
-
-        <LinearGradient
-          colors={['#E2FCF8', '#EEF0FF']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            borderRadius: 22,
-            padding: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
-          }}
-        >
-          <View className="min-w-0 flex-1 pr-3">
-            <Text
-              className="text-[15px] font-extrabold"
-              style={{ color: COLORS.text }}
-            >
-              Bạn có dự định mới?
-            </Text>
-            <Text className="mt-0.5 text-[11px]" style={{ color: '#5D7782' }}>
-              Khám phá thêm điểm đến mới hoặc lên kế hoạch chuyến đi tiếp
-              theo của bạn.
-            </Text>
+                <Icon name="delete-outline" size={20} color="#AD3232" />
+                <Text className="text-[14px] font-semibold text-[#AD3232]">Xóa kế hoạch</Text>
+              </Pressable>
+            ) : null}
           </View>
-
-          <Pressable
-            onPress={handleCreateTrip}
-            className="flex-row items-center rounded-full px-4 py-2.5 active:opacity-80"
-            style={{ backgroundColor: COLORS.primaryDark }}
-          >
-            <Text className="text-[12px] font-bold text-white">Lên lịch mới</Text>
-            <MaterialCommunityIcons
-              name="plus"
-              size={16}
-              color="white"
-              style={{ marginLeft: 4 }}
-            />
-          </Pressable>
-        </LinearGradient>
-      </ScrollView>
-
-      {/* ================= BOTTOM NAVIGATION ================= */}
-
-      <BottomTabBar activeTab="trips" onTabPress={handleTabPress} />
+        ) : null}
+      </Sheet>
+      <Toast message={toast} />
     </SafeAreaView>
   );
 }

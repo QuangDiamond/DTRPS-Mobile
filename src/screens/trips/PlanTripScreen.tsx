@@ -1,704 +1,279 @@
-import React, { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Pressable, View } from 'react-native';
+import { Text } from '../../ui/Typography';
+import { errorMessage } from '../../api/http';
+import { referenceApi } from '../../api/referenceApi';
+import { tripFlowApi, type TravelPace } from '../../api/tripFlowApi';
+import type { CategoryGroup, ReferenceItem } from '../../api/types';
+import { userApi } from '../../api/userApi';
 import {
-  Alert,
-  ImageBackground,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  Text,
-  View,
-} from 'react-native';
-
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+  BudgetInput,
+  MAX_BUDGET,
+  PacePicker,
+  ProvinceSheet,
+  SectionCard,
+  SelectBox,
+  Stepper,
+} from '../../components/PlanForm';
 import {
-  companionOptions,
-  paceOptions,
-  planBudgetOptions,
-  planDestinations,
-  planInterestOptions,
-  type BudgetId,
+  COMPANION_OPTIONS,
+  EXPERIENCE_QUESTIONS,
+  EXPERIENCE_TO_CATEGORIES,
   type CompanionId,
   type PaceId,
-} from '../../constants/planTrip';
-import type { TravelPreferences } from '../../constants/travelPreferences';
+} from '../../data/planTrip';
+import type { RootScreenProps } from '../../navigation/types';
+import { colors } from '../../theme';
+import { FlowProgress } from '../../ui/Bits';
+import { Button } from '../../ui/Button';
+import { DatePickerSheet } from '../../ui/DatePickerSheet';
+import { Icon } from '../../ui/Icon';
+import { Header, Screen } from '../../ui/Screen';
+import { Notice } from '../../ui/States';
+import { addDays, formatDate, todayIso } from '../../utils/format';
 
-// ==================== TYPES ====================
+const DEFAULT_BUDGET = 10_000_000;
+const PACE_TO_API: Record<PaceId, TravelPace> = { relaxed: 'RELAXED', balanced: 'BALANCED', packed: 'PACKED' };
 
-type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-
-export type TripPlan = {
-  destinationId: string;
-  startDate: Date;
-  days: number;
-  companion: CompanionId;
-  members: number;
-  budget: BudgetId;
-  interests: string[];
-  pace: PaceId;
-};
-
-type PlanTripScreenProps = {
-  /** Sở thích đã lưu, dùng để điền sẵn ngân sách / sở thích / nhịp độ */
-  preferences?: TravelPreferences;
-  onBack: () => void;
-  onSubmit?: (plan: TripPlan) => void;
-};
-
-// ==================== COLORS ====================
-
-const COLORS = {
-  primary: '#087A78',
-  primaryDark: '#075C66',
-  text: '#13364A',
-  muted: '#72818C',
-  background: '#F8F8FF',
-  lightPurple: '#EBEDFF',
-  mint: '#C3F8F0',
-  selectedBg: '#E2FAF5',
-  white: '#FFFFFF',
-};
-
-// ==================== HELPERS ====================
-
-const pad = (value: number) => String(value).padStart(2, '0');
-
-const formatDate = (date: Date) =>
-  `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
-
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-// Chuyển sở thích đã lưu (UC-006) sang lựa chọn của màn này
-const fromPreferences = (preferences?: TravelPreferences) => {
-  const interestMap: Record<string, string> = {
-    nature: 'nature',
-    culture: 'culture',
-    food: 'food',
-    shopping: 'shopping',
-    nightlife: 'shopping',
-  };
-  const budgetMap: Record<string, BudgetId> = {
-    saving: 'saving',
-    medium: 'standard',
-    luxury: 'luxury',
-  };
-  const paceMap: Record<string, PaceId> = {
-    relax: 'relaxed',
-    luxury: 'relaxed',
-    family: 'relaxed',
-    adventure: 'packed',
-  };
-
-  const interests = Array.from(
-    new Set((preferences?.interests ?? []).map((id) => interestMap[id]).filter(Boolean))
-  );
-  if (preferences?.style === 'adventure') interests.push('adventure');
-  if (preferences?.style === 'relax') interests.push('relax');
-
-  return {
-    interests: interests.length > 0 ? interests : ['beach', 'food', 'culture'],
-    budget: (preferences?.budget && budgetMap[preferences.budget]) || 'standard',
-    pace: (preferences?.style && paceMap[preferences.style]) || 'balanced',
-  };
-};
-
-// ==================== SMALL COMPONENTS ====================
-
-function SectionCard({
-  icon,
-  title,
-  subtitle,
-  right,
-  children,
-}: {
-  icon: IconName;
-  title: string;
-  subtitle: string;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <View className="mt-3.5 rounded-[20px] bg-white p-4">
-      <View className="mb-3 flex-row items-center">
-        <View
-          className="h-9 w-9 items-center justify-center rounded-xl"
-          style={{ backgroundColor: COLORS.lightPurple }}
-        >
-          <MaterialCommunityIcons name={icon} size={19} color={COLORS.primary} />
-        </View>
-        <View className="ml-2.5 min-w-0 flex-1">
-          <Text className="text-[14px] font-extrabold" style={{ color: COLORS.text }}>
-            {title}
-          </Text>
-          <Text className="text-[11px]" style={{ color: COLORS.muted }}>
-            {subtitle}
-          </Text>
-        </View>
-        {right}
-      </View>
-      {children}
-    </View>
-  );
-}
-
-function StepperButton({
-  icon,
-  onPress,
-  disabled,
-  filled,
-}: {
-  icon: IconName;
-  onPress: () => void;
-  disabled?: boolean;
-  filled?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      hitSlop={6}
-      className="h-8 w-8 items-center justify-center rounded-full"
-      style={{
-        backgroundColor: filled ? COLORS.primaryDark : COLORS.lightPurple,
-        opacity: disabled ? 0.4 : 1,
-      }}
-    >
-      <MaterialCommunityIcons
-        name={icon}
-        size={18}
-        color={filled ? 'white' : COLORS.primaryDark}
-      />
-    </Pressable>
-  );
-}
-
-// ==================== MAIN SCREEN ====================
-
-export default function PlanTripScreen({
-  preferences,
-  onBack,
-  onSubmit,
-}: PlanTripScreenProps) {
-  const initial = useMemo(() => fromPreferences(preferences), [preferences]);
-
-  const [destinationId, setDestinationId] = useState(planDestinations[0].id);
-  const [showDestinations, setShowDestinations] = useState(false);
-
-  const [startDate, setStartDate] = useState(() => addDays(new Date(), 7));
+/**
+ * Tạo Travel Plan — giống PlanTripPage của web: chọn tỉnh, ngày, người đi cùng, ngân sách, nhịp độ.
+ * Loại hình lấy từ Sở thích du lịch đã lưu (không hỏi lại), rồi chuyển sang màn Đang chuẩn bị.
+ */
+export default function PlanTripScreen({ navigation }: RootScreenProps<'PlanTrip'>) {
+  const [provinces, setProvinces] = useState<ReferenceItem[]>([]);
+  const [provincesFailed, setProvincesFailed] = useState(false);
+  const [destination, setDestination] = useState<ReferenceItem | null>(null);
+  const [pickingProvince, setPickingProvince] = useState(false);
+  const [startDate, setStartDate] = useState(() => addDays(todayIso(), 7));
+  const [pickingDate, setPickingDate] = useState(false);
   const [days, setDays] = useState(4);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-
   const [companion, setCompanion] = useState<CompanionId>('couple');
   const [members, setMembers] = useState(2);
+  const [budgetInput, setBudgetInput] = useState(String(DEFAULT_BUDGET));
+  const [typeGroups, setTypeGroups] = useState<CategoryGroup[]>([]);
+  const [savedCategoryCodes, setSavedCategoryCodes] = useState<string[]>([]);
+  const [savedExperiences, setSavedExperiences] = useState<string[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoriesFailed, setCategoriesFailed] = useState(false);
+  const [pace, setPace] = useState<PaceId>('balanced');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [reloadPrefs, setReloadPrefs] = useState(0);
 
-  const [budget, setBudget] = useState<BudgetId>(initial.budget);
-  const [interests, setInterests] = useState<string[]>(initial.interests);
-  const [pace, setPace] = useState<PaceId>(initial.pace);
+  useEffect(() => {
+    referenceApi.provinces().then(setProvinces).catch(() => setProvincesFailed(true));
+  }, []);
 
-  const destination = planDestinations.find((item) => item.id === destinationId)!;
+  // Tải lại khi quay về từ màn Sở thích du lịch
+  useEffect(() => navigation.addListener('focus', () => setReloadPrefs((n) => n + 1)), [navigation]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.allSettled([referenceApi.categories(), userApi.preferences()]).then(([groupsResult, prefsResult]) => {
+      if (!active) return;
+      setCategoriesLoading(false);
+      if (groupsResult.status === 'rejected') {
+        setCategoriesFailed(true);
+        return;
+      }
+      const groups = groupsResult.value;
+      setTypeGroups(groups);
+      if (prefsResult.status !== 'fulfilled') return;
+      const valid = new Set(groups.flatMap((group) => group.subtypes.map((s) => s.code)));
+      setSavedCategoryCodes([...new Set(prefsResult.value.interests.filter((code) => valid.has(code)))]);
+      setSavedExperiences(prefsResult.value.experiencePreferences);
+    });
+    return () => {
+      active = false;
+    };
+  }, [reloadPrefs]);
+
+  const budget = Math.min(MAX_BUDGET, Math.max(0, Number(budgetInput) || 0));
   const endDate = addDays(startDate, days - 1);
-  const budgetOption = planBudgetOptions.find((item) => item.id === budget)!;
-  const today = new Date();
-
-  const showComingSoon = (title: string) => {
-    Alert.alert(title, 'Chức năng đang được phát triển.');
-  };
+  const experienceSet = new Set(savedExperiences);
+  const selectedExperienceOptions = EXPERIENCE_QUESTIONS.flatMap((question) => [...question.options]).filter(
+    (option) => experienceSet.has(option.code),
+  );
 
   const selectCompanion = (id: CompanionId) => {
     setCompanion(id);
-    setMembers(companionOptions.find((item) => item.id === id)!.defaultCount);
+    setMembers(COMPANION_OPTIONS.find((item) => item.id === id)?.defaultCount ?? 2);
   };
 
-  const changeMembers = (delta: number) => {
-    const next = Math.min(20, Math.max(1, members + delta));
+  const changeMembers = (next: number) => {
     setMembers(next);
-    // Tự đổi kiểu đoàn khi số người không còn khớp
     if (next === 1) setCompanion('solo');
     else if (companion === 'solo') setCompanion(next === 2 ? 'couple' : 'friends');
   };
 
-  const toggleInterest = (id: string) => {
-    setInterests((previous) =>
-      previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]
-    );
-  };
-
-  const handleSubmit = () => {
-    if (interests.length === 0) {
-      Alert.alert('Thiếu sở thích', 'Hãy chọn ít nhất một sở thích trải nghiệm.');
-      return;
+  const submit = async () => {
+    if (submitting) return;
+    setError(null);
+    if (!destination) return setError('Hãy chọn điểm đến.');
+    if (startDate < todayIso()) return setError('Ngày bắt đầu không thể ở trong quá khứ.');
+    if (budget <= 0 || budget > MAX_BUDGET) return setError('Ngân sách phải lớn hơn 0 và không vượt quá 1 tỷ đồng.');
+    if (categoriesLoading || categoriesFailed || typeGroups.length === 0) {
+      return setError('Không tải được danh mục trải nghiệm.');
     }
 
-    const plan: TripPlan = {
-      destinationId,
-      startDate,
-      days,
-      companion,
-      members,
-      budget,
-      interests,
-      pace,
-    };
-
-    if (onSubmit) {
-      onSubmit(plan);
-      return;
-    }
-
-    Alert.alert(
-      'Đang tạo lịch trình',
-      `${destination.short} • ${days} ngày ${days - 1} đêm • ${members} người\n` +
-        'SmartTravel AI đang sắp xếp lịch trình phù hợp cho bạn.',
-      [{ text: 'OK', onPress: onBack }]
+    // Có trả lời câu "trải nghiệm" ở Sở thích → dùng mã tương ứng; chưa trả lời → loại hình đã lưu
+    const hasActivityChoice = savedExperiences.some((code) => code.startsWith('EXPERIENCE_'));
+    const compatible = new Set(
+      hasActivityChoice ? savedExperiences.flatMap((code) => EXPERIENCE_TO_CATEGORIES[code] ?? []) : savedCategoryCodes,
     );
+    const categoryCodes = [
+      ...new Set(typeGroups.flatMap((group) => group.subtypes.filter((s) => compatible.has(s.code)).map((s) => s.code))),
+    ].slice(0, 50);
+
+    setSubmitting(true);
+    try {
+      const companionLabel = COMPANION_OPTIONS.find((item) => item.id === companion)?.label;
+      const saved = await tripFlowApi.createPlan({
+        title: `Du lịch ${destination.name} ${days} ngày`,
+        destination: destination.name,
+        startDate,
+        endDate,
+        budget,
+        currency: 'VND',
+        groupSize: members,
+        // Backend đọc hình thức đồng hành từ mô tả này (giống web)
+        description: companionLabel ? `Hình thức đồng hành: ${companionLabel}` : null,
+        categoryCodes,
+        experiencePreferences: savedExperiences,
+        travelPace: PACE_TO_API[pace],
+      });
+      navigation.replace('GeneratingTrip', { planId: saved.planId });
+    } catch (caught) {
+      setError(errorMessage(caught));
+      setSubmitting(false);
+    }
   };
 
   return (
-    <SafeAreaView
-      edges={['top', 'bottom']}
-      className="flex-1"
-      style={{ backgroundColor: COLORS.background }}
+    <Screen
+      header={
+        <View className="bg-white">
+          <Header title="Lập kế hoạch chuyến đi" onBack={() => navigation.goBack()} />
+          <FlowProgress current={1} />
+        </View>
+      }
+      footer={
+        <View className="border-t border-[#E5F1F4] bg-white px-4 pb-4 pt-3">
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <Button title="Gợi ý địa điểm với AI" icon="auto-awesome" loading={submitting} onPress={() => void submit()} />
+        </View>
+      }
     >
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-
-      {/* ================= HEADER ================= */}
-
-      <View className="h-[58px] flex-row items-center justify-between bg-white px-3">
-        <View className="min-w-0 flex-1 flex-row items-center">
-          <Pressable
-            onPress={onBack}
-            hitSlop={8}
-            className="h-9 w-9 items-center justify-center"
-            accessibilityLabel="Quay lại"
-          >
-            <MaterialCommunityIcons name="chevron-left" size={27} color={COLORS.text} />
-          </Pressable>
-          <Text
-            numberOfLines={1}
-            className="ml-1 flex-1 text-[16px] font-bold"
-            style={{ color: COLORS.text }}
-          >
-            Lập kế hoạch chuyến đi
-          </Text>
+      <View className="mb-4">
+        <View className="flex-row items-center gap-1 self-start rounded-full bg-[#C0F5FB] px-2.5 py-1">
+          <Icon name="auto-awesome" size={12} color={colors.primaryStrong} />
+          <Text className="text-[10.5px] font-bold text-[#0E7490]">Smart Travel</Text>
         </View>
-
-        <View className="flex-row items-center gap-3">
-          <Pressable onPress={() => showComingSoon('Chia sẻ')} hitSlop={6}>
-            <MaterialCommunityIcons name="share-variant-outline" size={20} color={COLORS.muted} />
-          </Pressable>
-          <Pressable onPress={() => showComingSoon('Lưu bản nháp')} hitSlop={6}>
-            <MaterialCommunityIcons name="bookmark-outline" size={21} color={COLORS.muted} />
-          </Pressable>
-          <View
-            className="h-8 w-8 items-center justify-center rounded-full"
-            style={{ backgroundColor: COLORS.primaryDark }}
-          >
-            <MaterialCommunityIcons name="account" size={19} color="white" />
-          </View>
-        </View>
+        <Text className="mt-2 text-[20px] font-extrabold text-[#13364A]">Tạo lịch trình du lịch cá nhân hóa</Text>
+        <Text className="mt-1 text-[12.5px] text-[#72818C]">Chọn điểm đến, ngân sách và sở thích để bắt đầu hành trình.</Text>
       </View>
 
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 15, paddingTop: 14, paddingBottom: 20 }}
-      >
-        {/* ================= INTRO ================= */}
+      <SectionCard icon="location-on" title="Điểm đến mơ ước" subtitle="Chọn tỉnh/thành du lịch">
+        <SelectBox
+          icon="near-me"
+          value={destination?.name ?? null}
+          placeholder={provincesFailed ? 'Không tải được danh sách tỉnh/thành' : 'Chọn tỉnh/thành'}
+          onPress={() => setPickingProvince(true)}
+          disabled={provinces.length === 0}
+        />
+      </SectionCard>
 
-        <View
-          className="flex-row items-center self-start rounded-full px-2.5 py-1"
-          style={{ backgroundColor: COLORS.mint }}
-        >
-          <MaterialCommunityIcons name="star-four-points" size={11} color={COLORS.primaryDark} />
-          <Text className="ml-1 text-[10px] font-bold" style={{ color: COLORS.primaryDark }}>
-            Smart AI Itinerary Engine
-          </Text>
+      <SectionCard icon="calendar-month" title="Thời gian chuyến đi" subtitle="Chọn ngày bắt đầu và số ngày">
+        <SelectBox icon="event" value={`Bắt đầu: ${formatDate(startDate)}`} placeholder="" onPress={() => setPickingDate(true)} />
+        <View className="mt-3 flex-row items-center justify-between">
+          <View>
+            <Text className="text-[12.5px] font-semibold text-[#72818C]">Số ngày</Text>
+            <Text className="text-[11.5px] text-[#8193A0]">
+              {formatDate(startDate)} → {formatDate(endDate)}
+            </Text>
+          </View>
+          <Stepper value={days} onChange={setDays} min={1} max={30} label="số ngày" suffix="ngày" />
         </View>
-        <Text className="mt-2 text-[20px] font-extrabold" style={{ color: COLORS.text }}>
-          Tạo lịch trình du lịch cá nhân hóa
-        </Text>
-        <Text className="mt-1 text-[12px]" style={{ color: COLORS.muted }}>
-          Tùy biến hành trình khám phá Việt Nam theo phong cách của bạn
-        </Text>
+      </SectionCard>
 
-        {/* ================= 1. DESTINATION ================= */}
-
-        <SectionCard
-          icon="map-marker-outline"
-          title="Điểm đến mơ ước"
-          subtitle="Chọn thành phố hoặc khu vực du lịch"
-        >
-          <Pressable
-            onPress={() => setShowDestinations((previous) => !previous)}
-            className="h-12 flex-row items-center rounded-2xl px-3.5"
-            style={{ backgroundColor: COLORS.background, borderWidth: 1, borderColor: '#E3E7F0' }}
-          >
-            <MaterialCommunityIcons name="navigation-variant-outline" size={18} color={COLORS.primary} />
-            <Text
-              numberOfLines={1}
-              className="ml-2 flex-1 text-[14px] font-bold"
-              style={{ color: COLORS.text }}
-            >
-              {destination.label}
-            </Text>
-            <MaterialCommunityIcons
-              name={showDestinations ? 'chevron-up' : 'chevron-down'}
-              size={22}
-              color={COLORS.muted}
-            />
-          </Pressable>
-
-          {showDestinations && (
-            <View className="mt-2 overflow-hidden rounded-2xl" style={{ borderWidth: 1, borderColor: '#E3E7F0' }}>
-              {planDestinations.map((item) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => {
-                    setDestinationId(item.id);
-                    setShowDestinations(false);
-                  }}
-                  className="flex-row items-center px-3.5 py-3"
-                  style={{
-                    backgroundColor: item.id === destinationId ? COLORS.selectedBg : COLORS.white,
-                  }}
-                >
-                  <Text className="flex-1 text-[13px]" style={{ color: COLORS.text }}>
-                    {item.label}
-                  </Text>
-                  {item.id === destinationId && (
-                    <MaterialCommunityIcons name="check" size={18} color={COLORS.primary} />
-                  )}
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="mt-2.5"
-            contentContainerStyle={{ gap: 6 }}
-          >
-            {planDestinations.map((item) => {
-              const selected = item.id === destinationId;
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setDestinationId(item.id)}
-                  className="rounded-full px-3 py-1.5"
-                  style={{ backgroundColor: selected ? COLORS.mint : COLORS.lightPurple }}
-                >
-                  <Text
-                    className="text-[11px] font-semibold"
-                    style={{ color: selected ? COLORS.primaryDark : '#445577' }}
-                  >
-                    {item.short}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </SectionCard>
-
-        {/* ================= 2. DATES ================= */}
-
-        <SectionCard
-          icon="calendar-month-outline"
-          title="Thời gian chuyến đi"
-          subtitle="Chọn ngày bắt đầu và kết thúc"
-        >
-          <Pressable
-            onPress={() => setShowDatePicker((previous) => !previous)}
-            className="flex-row items-center rounded-2xl px-3.5 py-2.5"
-            style={{ backgroundColor: COLORS.background, borderWidth: 1, borderColor: '#E3E7F0' }}
-          >
-            <View className="flex-1">
-              <Text className="text-[15px] font-extrabold" style={{ color: COLORS.text }}>
-                {formatDate(startDate)} - {formatDate(endDate)}
-              </Text>
-              <Text className="text-[11px] font-semibold" style={{ color: COLORS.primary }}>
-                {days} ngày {days - 1} đêm
-              </Text>
-            </View>
-            <MaterialCommunityIcons
-              name={showDatePicker ? 'chevron-up' : 'calendar-edit'}
-              size={21}
-              color={COLORS.primary}
-            />
-          </Pressable>
-
-          {showDatePicker && (
-            <View className="mt-2 rounded-2xl p-3" style={{ backgroundColor: COLORS.background }}>
-              <View className="flex-row items-center justify-between">
-                <Text className="text-[12px] font-semibold" style={{ color: COLORS.muted }}>
-                  Ngày đi
-                </Text>
-                <View className="flex-row items-center gap-2.5">
-                  <StepperButton
-                    icon="chevron-left"
-                    disabled={addDays(startDate, -1) < today}
-                    onPress={() => setStartDate(addDays(startDate, -1))}
-                  />
-                  <Text className="w-[86px] text-center text-[13px] font-bold" style={{ color: COLORS.text }}>
-                    {formatDate(startDate)}
-                  </Text>
-                  <StepperButton icon="chevron-right" onPress={() => setStartDate(addDays(startDate, 1))} />
-                </View>
-              </View>
-
-              <View className="mt-2.5 flex-row items-center justify-between">
-                <Text className="text-[12px] font-semibold" style={{ color: COLORS.muted }}>
-                  Số ngày
-                </Text>
-                <View className="flex-row items-center gap-2.5">
-                  <StepperButton icon="minus" disabled={days <= 1} onPress={() => setDays(days - 1)} />
-                  <Text className="w-[86px] text-center text-[13px] font-bold" style={{ color: COLORS.text }}>
-                    {days} ngày
-                  </Text>
-                  <StepperButton icon="plus" disabled={days >= 14} onPress={() => setDays(days + 1)} />
-                </View>
-              </View>
-            </View>
-          )}
-        </SectionCard>
-
-        {/* ================= 3. COMPANIONS ================= */}
-
-        <SectionCard
-          icon="account-group-outline"
-          title="Bạn đồng hành"
-          subtitle="Số lượng và kiểu nhóm du lịch"
-        >
-          <View className="flex-row flex-wrap justify-between">
-            {companionOptions.map((item) => {
-              const selected = item.id === companion;
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => selectCompanion(item.id)}
-                  className="mb-2 flex-row items-center rounded-2xl px-3 py-2.5"
-                  style={{
-                    width: '48.5%',
-                    backgroundColor: selected ? COLORS.selectedBg : COLORS.background,
-                    borderWidth: selected ? 1.5 : 1,
-                    borderColor: selected ? COLORS.primary : '#E3E7F0',
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name={item.icon}
-                    size={19}
-                    color={selected ? COLORS.primaryDark : COLORS.muted}
-                  />
-                  <View className="ml-2">
-                    <Text className="text-[12px] font-bold" style={{ color: COLORS.text }}>
-                      {item.label}
-                    </Text>
-                    <Text className="text-[10px]" style={{ color: COLORS.muted }}>
-                      {item.note}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View className="mt-1 flex-row items-center justify-between">
-            <Text className="text-[12px] font-semibold" style={{ color: COLORS.muted }}>
-              Tùy chỉnh thành viên:
-            </Text>
-            <View className="flex-row items-center gap-3">
-              <StepperButton icon="minus" disabled={members <= 1} onPress={() => changeMembers(-1)} />
-              <Text className="w-6 text-center text-[15px] font-extrabold" style={{ color: COLORS.text }}>
-                {members}
-              </Text>
-              <StepperButton icon="plus" filled disabled={members >= 20} onPress={() => changeMembers(1)} />
-            </View>
-          </View>
-        </SectionCard>
-
-        {/* ================= 4. BUDGET ================= */}
-
-        <SectionCard
-          icon="wallet-outline"
-          title="Ngân sách dự kiến"
-          subtitle="Mức chi tiêu trung bình / người"
-          right={
-            <Text className="text-[15px] font-extrabold" style={{ color: COLORS.primary }}>
-              {budgetOption.estimate}
-            </Text>
-          }
-        >
-          <View className="flex-row rounded-2xl p-1" style={{ backgroundColor: COLORS.lightPurple }}>
-            {planBudgetOptions.map((item) => {
-              const selected = item.id === budget;
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setBudget(item.id)}
-                  className="flex-1 items-center rounded-xl py-2"
-                  style={{ backgroundColor: selected ? COLORS.mint : 'transparent' }}
-                >
-                  <Text
-                    className="text-[12px] font-bold"
-                    style={{ color: selected ? COLORS.primaryDark : COLORS.text }}
-                  >
-                    {item.label}
-                  </Text>
-                  <Text className="text-[10px]" style={{ color: COLORS.muted }}>
-                    {item.note}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </SectionCard>
-
-        {/* ================= 5. INTERESTS ================= */}
-
-        <SectionCard
-          icon="heart-multiple-outline"
-          title="Sở thích trải nghiệm"
-          subtitle="Chọn nhiều phong cách bạn yêu thích"
-        >
-          <View className="flex-row flex-wrap gap-2">
-            {planInterestOptions.map((item) => {
-              const selected = interests.includes(item.id);
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => toggleInterest(item.id)}
-                  className="flex-row items-center rounded-full px-3 py-2"
-                  style={{
-                    backgroundColor: selected ? COLORS.mint : COLORS.background,
-                    borderWidth: 1,
-                    borderColor: selected ? COLORS.primary : '#E3E7F0',
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name={item.icon}
-                    size={15}
-                    color={selected ? COLORS.primaryDark : COLORS.muted}
-                  />
-                  <Text
-                    className="ml-1.5 text-[12px] font-semibold"
-                    style={{ color: selected ? COLORS.primaryDark : COLORS.text }}
-                  >
-                    {item.label}
-                  </Text>
-                  {selected && (
-                    <MaterialCommunityIcons
-                      name="check-circle-outline"
-                      size={14}
-                      color={COLORS.primaryDark}
-                      style={{ marginLeft: 4 }}
-                    />
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-        </SectionCard>
-
-        {/* ================= 6. PACE ================= */}
-
-        <SectionCard
-          icon="speedometer"
-          title="Nhịp độ chuyến đi (Travel Pace)"
-          subtitle="Tần suất và mật độ hoạt động"
-        >
-          {paceOptions.map((item) => {
-            const selected = item.id === pace;
+      <SectionCard
+        icon="group"
+        title="Bạn đồng hành"
+        subtitle="Số lượng và kiểu nhóm du lịch"
+        right={<Stepper value={members} onChange={changeMembers} min={1} max={20} label="số người" />}
+      >
+        <View className="flex-row flex-wrap justify-between gap-y-2">
+          {COMPANION_OPTIONS.map((item) => {
+            const active = item.id === companion;
             return (
               <Pressable
                 key={item.id}
-                onPress={() => setPace(item.id)}
-                className="mb-2 flex-row items-start rounded-2xl p-3"
-                style={{
-                  backgroundColor: selected ? COLORS.selectedBg : COLORS.background,
-                  borderWidth: selected ? 1.5 : 1,
-                  borderColor: selected ? COLORS.primary : '#E3E7F0',
-                }}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: selected }}
+                onPress={() => selectCompanion(item.id)}
+                style={{ borderColor: active ? colors.primary : colors.line, backgroundColor: active ? colors.primarySoft : '#FFFFFF' }}
+                className="w-[48.5%] flex-row items-center gap-2 rounded-2xl border p-3"
               >
-                <View
-                  className="mr-2.5 mt-0.5 h-5 w-5 items-center justify-center rounded-full"
-                  style={{
-                    backgroundColor: selected ? COLORS.primary : 'transparent',
-                    borderWidth: selected ? 0 : 1.5,
-                    borderColor: '#C5CDD3',
-                  }}
-                >
-                  {selected && <MaterialCommunityIcons name="check" size={14} color="white" />}
-                </View>
-                <View className="flex-1">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="flex-1 text-[13px] font-bold" style={{ color: COLORS.text }}>
-                      {item.label} ({item.english})
-                    </Text>
-                    <Text className="text-[10px] font-semibold" style={{ color: COLORS.primary }}>
-                      {item.perDay}
-                    </Text>
-                  </View>
-                  <Text className="mt-0.5 text-[11px]" style={{ color: COLORS.muted }}>
-                    {item.description}
-                  </Text>
+                <Icon name={item.icon} size={20} color={active ? colors.primary : colors.muted} />
+                <View className="min-w-0 flex-1">
+                  <Text className="text-[13px] font-bold text-[#13364A]">{item.label}</Text>
+                  <Text className="text-[11px] text-[#72818C]">{item.note}</Text>
                 </View>
               </Pressable>
             );
           })}
-        </SectionCard>
-
-        {/* ================= PREVIEW ================= */}
-
-        <ImageBackground
-          source={{ uri: destination.image }}
-          style={{ height: 130, marginTop: 14 }}
-          imageStyle={{ borderRadius: 20 }}
-        >
-          <LinearGradient
-            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.7)']}
-            style={{ flex: 1, borderRadius: 20, padding: 14, justifyContent: 'flex-end' }}
-          >
-            <Text className="text-[10px] font-semibold" style={{ color: COLORS.mint }}>
-              Điểm nổi bật tại {destination.short}
-            </Text>
-            <Text className="mt-0.5 text-[15px] font-extrabold text-white">
-              {destination.highlights}
-            </Text>
-          </LinearGradient>
-        </ImageBackground>
-      </ScrollView>
-
-      {/* ================= FOOTER ================= */}
-
-      <View className="bg-white px-4 pb-3 pt-2.5">
-        <View className="mb-2 flex-row items-center justify-center">
-          <MaterialCommunityIcons name="lightning-bolt" size={13} color="#E0A100" />
-          <Text className="ml-1 text-[11px]" style={{ color: COLORS.muted }}>
-            Tối ưu hóa lịch trình thông minh trong vài giây bởi AI
-          </Text>
         </View>
-        <Pressable
-          onPress={handleSubmit}
-          className="h-12 flex-row items-center justify-center rounded-full active:opacity-80"
-          style={{ backgroundColor: COLORS.primaryDark }}
-        >
-          <Text className="text-[14px] font-bold text-white">Tạo chuyến đi của tôi</Text>
-          <MaterialCommunityIcons
-            name="arrow-right"
-            size={18}
-            color="white"
-            style={{ marginLeft: 6 }}
-          />
+      </SectionCard>
+
+      <SectionCard icon="account-balance-wallet" title="Ngân sách dự kiến" subtitle="Tổng ngân sách cho cả chuyến đi">
+        <BudgetInput value={budgetInput} onChange={setBudgetInput} />
+      </SectionCard>
+
+      <SectionCard
+        icon="auto-awesome"
+        title="Cá nhân hóa chuyến đi của bạn"
+        subtitle="Dựa trên sở thích bạn đã thiết lập — dùng cho mọi chuyến đi mới."
+      >
+        {selectedExperienceOptions.length > 0 ? (
+          <View className="flex-row flex-wrap gap-2">
+            {selectedExperienceOptions.map((option) => (
+              <View key={option.code} className="flex-row items-center gap-1 rounded-full bg-[#ECFEFF] px-3 py-1.5">
+                <Text className="text-[12px]">{option.emoji}</Text>
+                <Text className="text-[12px] font-bold text-[#0E7490]">{option.label}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text className="text-[12.5px] leading-5 text-[#72818C]">
+            {categoriesLoading ? 'Đang tải sở thích…' : 'Bạn chưa thiết lập sở thích. Thiết lập để AI gợi ý đúng gu hơn.'}
+          </Text>
+        )}
+        <Pressable onPress={() => navigation.navigate('Preferences')} className="mt-3 flex-row items-center gap-1 self-start">
+          <Icon name="edit" size={15} color={colors.primary} />
+          <Text className="text-[12.5px] font-bold text-[#0891B2]">Chỉnh sửa sở thích</Text>
         </Pressable>
-      </View>
-    </SafeAreaView>
+      </SectionCard>
+
+      <SectionCard icon="speed" title="Nhịp độ chuyến đi" subtitle="Tần suất và mật độ hoạt động">
+        <PacePicker value={pace} onChange={setPace} />
+      </SectionCard>
+
+      <ProvinceSheet
+        visible={pickingProvince}
+        provinces={provinces}
+        selected={destination?.name ?? null}
+        onClose={() => setPickingProvince(false)}
+        onSelect={(item) => {
+          setDestination(item);
+          setError(null);
+        }}
+      />
+      <DatePickerSheet
+        visible={pickingDate}
+        title="Ngày bắt đầu"
+        value={startDate}
+        min={todayIso()}
+        onClose={() => setPickingDate(false)}
+        onSelect={setStartDate}
+      />
+    </Screen>
   );
 }

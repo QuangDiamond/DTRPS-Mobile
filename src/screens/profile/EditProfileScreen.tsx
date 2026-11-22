@@ -1,712 +1,129 @@
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, View } from 'react-native';
+import { Text } from '../../ui/Typography';
+import { ClientApiError, errorMessage } from '../../api/http';
+import { userApi } from '../../api/userApi';
+import { useAuth } from '../../auth/AuthProvider';
+import { useAvatarUpload } from '../../components/useAvatarUpload';
+import type { RootScreenProps } from '../../navigation/types';
+import { colors } from '../../theme';
+import { Avatar } from '../../ui/Bits';
+import { Button } from '../../ui/Button';
+import { DatePickerSheet } from '../../ui/DatePickerSheet';
+import { Field } from '../../ui/Field';
+import { Icon } from '../../ui/Icon';
+import { Header, Screen } from '../../ui/Screen';
+import { Notice } from '../../ui/States';
+import { addDays, formatDate, todayIso } from '../../utils/format';
+import { isValidPhone, normalizePhone } from '../../utils/validation';
 
-import React, { useState } from 'react';
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+/** Chỉnh sửa hồ sơ — PUT /api/users/me (giống EditProfilePage của web) */
+export default function EditProfileScreen({ navigation }: RootScreenProps<'EditProfile'>) {
+  const { user, updateUser } = useAuth();
+  const [name, setName] = useState(user?.name ?? '');
+  const [phone, setPhone] = useState(user?.phoneNumber ?? '');
+  const [dateOfBirth, setDateOfBirth] = useState(user?.dateOfBirth ?? '');
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? null);
+  const [pickingDate, setPickingDate] = useState(false);
+  // Ảnh đại diện lưu ngay khi chọn (không chờ bấm Lưu)
+  const avatar = useAvatarUpload((updated) => setAvatarUrl(updated.avatarUrl ?? null));
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
 
-// ================ TYPES ================
+  if (!user) return null;
 
-type IconName =
-  React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  const submit = async () => {
+    const next: Record<string, string> = {};
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2 || trimmedName.length > 150) next.name = 'Họ tên phải có từ 2 đến 150 ký tự';
+    if (phone.trim() && !isValidPhone(phone)) next.phoneNumber = 'Số điện thoại không hợp lệ';
+    if (dateOfBirth && dateOfBirth >= todayIso()) next.dateOfBirth = 'Ngày sinh phải ở trong quá khứ';
+    setErrors(next);
+    setFormError(null);
+    if (Object.keys(next).length > 0) return;
 
-export type EditableProfile = {
-  name: string;
-  email: string;
-  phone: string;
-  city: string;
-  preferences: string[];
-};
+    setSaving(true);
+    try {
+      const updated = await userApi.updateProfile({
+        name: trimmedName,
+        phoneNumber: phone.trim() ? normalizePhone(phone) : null,
+        dateOfBirth: dateOfBirth || null,
+        avatarUrl,
+      });
+      updateUser(updated);
+      navigation.goBack();
+    } catch (saveError) {
+      if (saveError instanceof ClientApiError) setErrors(saveError.fieldErrors);
+      setFormError(errorMessage(saveError));
+      setSaving(false);
+    }
+  };
 
-type EditProfileScreenProps = {
-  initialProfile?: EditableProfile;
-  onBack?: () => void;
-  onSave?: (profile: EditableProfile) => void;
-};
-
-// ================ COLORS ================
-
-const COLORS = {
-  background: '#F8F7FC',
-  primary: '#006D68',
-  dark: '#123747',
-  muted: '#7E8797',
-  mint: '#A0F1E7',
-  lightPurple: '#EBEDFF',
-  white: '#FFFFFF',
-};
-
-// ================ MOCK DATA ================
-
-export const defaultProfile: EditableProfile = {
-  name: 'Hoàng Nam',
-  email: 'hoangnam.travel@gmail.com',
-  phone: '912 345 678',
-  city: 'TP. Hồ Chí Minh',
-  preferences: [
-    'Biển đảo',
-    'Văn hóa di sản',
-    'Ẩm thực địa phương',
-  ],
-};
-
-const cityOptions = [
-  'TP. Hồ Chí Minh',
-  'Hà Nội',
-  'Đà Nẵng',
-  'Đà Lạt',
-  'Nha Trang',
-  'Cần Thơ',
-  'Huế',
-  'Hải Phòng',
-];
-
-const preferenceOptions: {
-  label: string;
-  icon: IconName;
-}[] = [
-  {
-    label: 'Biển đảo',
-    icon: 'waves',
-  },
-  {
-    label: 'Văn hóa di sản',
-    icon: 'bank-outline',
-  },
-  {
-    label: 'Ẩm thực địa phương',
-    icon: 'food',
-  },
-  {
-    label: 'Trekking & Khám phá',
-    icon: 'hiking',
-  },
-  {
-    label: 'Nghỉ dưỡng & Wellness',
-    icon: 'spa',
-  },
-  {
-    label: 'Check-in nhiếp ảnh',
-    icon: 'camera-outline',
-  },
-];
-
-// ================ FIELD CARD ================
-
-function FieldCard({
-                     label,
-                     required = false,
-                     right,
-                     children,
-                   }: {
-  label: string;
-  required?: boolean;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-}) {
   return (
-    <View className="mb-3 rounded-2xl bg-white px-4 py-3.5">
-      <View className="flex-row items-center justify-between">
-        <Text
-          className="text-[13px] font-semibold"
-          style={{ color: COLORS.dark }}
-        >
-          {label}
-          {required && (
-            <Text style={{ color: '#00A5A0' }}> *</Text>
-          )}
-        </Text>
-
-        {right}
-      </View>
-
-      <View className="mt-2 flex-row items-center">
-        {children}
-      </View>
-    </View>
-  );
-}
-
-// ================ PREFERENCE CHIP ================
-
-function PreferenceChip({
-                          label,
-                          icon,
-                          selected,
-                          onPress,
-                        }: {
-  label: string;
-  icon: IconName;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected }}
-      className="flex-row items-center rounded-full px-3 py-2.5"
-      style={{
-        backgroundColor: selected
-          ? COLORS.mint
-          : COLORS.lightPurple,
-      }}
+    <Screen
+      header={<Header title="Chỉnh sửa hồ sơ" onBack={() => navigation.goBack()} />}
+      footer={
+        <View className="border-t border-[#E5F1F4] bg-white px-4 pb-4 pt-3">
+          <Button title="Lưu thay đổi" icon="check" loading={saving} disabled={avatar.uploading} onPress={() => void submit()} />
+        </View>
+      }
     >
-      <MaterialCommunityIcons
-        name={icon}
-        size={16}
-        color={selected ? '#007A77' : '#4A7091'}
+      <View className="mb-5 items-center">
+        <Pressable onPress={() => void avatar.pick()} disabled={avatar.uploading} accessibilityLabel="Thay đổi ảnh đại diện">
+          <Avatar name={name} url={avatarUrl} size={104} />
+          <View className="absolute bottom-1 right-1 h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-[#0891B2]">
+            {avatar.uploading ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name="photo-camera" size={18} color="#FFFFFF" />}
+          </View>
+        </Pressable>
+        <Text className="mt-2 text-[12px] text-[#72818C]">Nhấn để thay đổi ảnh đại diện (lưu ngay)</Text>
+        {avatarUrl ? (
+          <Pressable onPress={avatar.remove} disabled={avatar.uploading} className="mt-1.5">
+            <Text className="text-[12.5px] font-bold text-[#D83A48]">Gỡ ảnh đại diện</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {avatar.error || errors.avatarUrl ? <Notice tone="danger">{avatar.error ?? errors.avatarUrl}</Notice> : null}
+      {formError ? <Notice tone="danger">{formError}</Notice> : null}
+
+      <Field label="Họ và tên *" icon="person-outline" value={name} onChangeText={setName} autoCapitalize="words" error={errors.name} />
+      <Field label="Email" icon="mail-outline" value={user.email} onChangeText={() => undefined} editable={false} hint="Email dùng để đăng nhập, không đổi được" />
+      <Field
+        label="Số điện thoại"
+        icon="call"
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
+        placeholder="0912 345 678"
+        error={errors.phoneNumber}
       />
-
-      <Text
-        className="ml-1.5 text-[12px] font-semibold"
-        style={{
-          color: selected ? '#006D68' : '#36546A',
-        }}
+      <Text className="mb-1.5 text-[12.5px] font-bold text-[#24404F]">Ngày sinh</Text>
+      <Pressable
+        onPress={() => setPickingDate(true)}
+        style={{ borderColor: errors.dateOfBirth ? colors.danger : colors.line }}
+        className="mb-1 h-[50px] flex-row items-center rounded-[14px] border bg-[#F3FBFC] px-3"
       >
-        {label}
-      </Text>
-
-      {selected && (
-        <MaterialCommunityIcons
-          name="check"
-          size={16}
-          color="#007F78"
-          style={{ marginLeft: 7 }}
-        />
-      )}
-    </Pressable>
-  );
-}
-
-// ================ MAIN SCREEN ================
-
-export default function EditProfileScreen({
-                                            initialProfile = defaultProfile,
-                                            onBack,
-                                            onSave,
-                                          }: EditProfileScreenProps) {
-  const [profile, setProfile] =
-    useState<EditableProfile>(() => ({
-      ...initialProfile,
-      preferences: [...initialProfile.preferences],
-    }));
-
-  const [cityModalVisible, setCityModalVisible] =
-    useState(false);
-
-  const updateField = (
-    field: 'name' | 'email' | 'phone' | 'city',
-    value: string
-  ) => {
-    setProfile((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-  };
-
-  const togglePreference = (value: string) => {
-    setProfile((previous) => {
-      const exists = previous.preferences.includes(value);
-
-      return {
-        ...previous,
-        preferences: exists
-          ? previous.preferences.filter(
-            (item) => item !== value
-          )
-          : [...previous.preferences, value],
-      };
-    });
-  };
-
-  const handleChangeAvatar = () => {
-    Alert.alert(
-      'Thay đổi ảnh đại diện',
-      'Chức năng chọn ảnh sẽ được bổ sung sau. Hiện tại ứng dụng đang dùng dữ liệu hardcode.'
-    );
-  };
-
-  const handleBack = () => {
-    if (onBack) {
-      onBack();
-    } else {
-      Alert.alert(
-        'Hủy bỏ',
-        'Chưa kết nối màn hình quay lại.'
-      );
-    }
-  };
-
-  const handleSave = () => {
-    const name = profile.name.trim();
-    const email = profile.email.trim();
-
-    if (!name) {
-      Alert.alert(
-        'Thiếu thông tin',
-        'Vui lòng nhập họ và tên.'
-      );
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      Alert.alert(
-        'Email không hợp lệ',
-        'Vui lòng kiểm tra lại địa chỉ email.'
-      );
-      return;
-    }
-
-    const updatedProfile: EditableProfile = {
-      ...profile,
-      name,
-      email,
-    };
-
-    if (onSave) {
-      onSave(updatedProfile);
-    } else {
-      Alert.alert(
-        'Đã lưu thay đổi',
-        'Thông tin đã được cập nhật trong giao diện demo.'
-      );
-    }
-  };
-
-  const emailVerified =
-    profile.email.trim().toLowerCase() ===
-    initialProfile.email.trim().toLowerCase();
-
-  return (
-    <SafeAreaView
-      edges={['top', 'bottom']}
-      className="flex-1"
-      style={{
-        backgroundColor: COLORS.background,
-      }}
-    >
-      <StatusBar style="dark" />
-
-      {/* ================ HEADER ================ */}
-
-      <View className="h-[58px] flex-row items-center justify-between border-b border-[#F0EFF6] bg-[#FCFBFF] px-4">
-        <View className="flex-row items-center">
-          <Pressable
-            onPress={handleBack}
-            accessibilityLabel="Quay lại"
-            className="mr-3 h-10 w-9 items-center justify-center"
-          >
-            <MaterialCommunityIcons
-              name="arrow-left"
-              size={24}
-              color="#435369"
-            />
+        <Icon name="cake" size={19} color={colors.muted} />
+        <Text className={`ml-2 flex-1 text-[14px] ${dateOfBirth ? 'text-[#0F2A3B]' : 'text-[#93A7B1]'}`}>
+          {dateOfBirth ? formatDate(dateOfBirth) : 'Chọn ngày sinh'}
+        </Text>
+        {dateOfBirth ? (
+          <Pressable onPress={() => setDateOfBirth('')} hitSlop={8} accessibilityLabel="Xóa ngày sinh">
+            <Icon name="close" size={18} color={colors.muted} />
           </Pressable>
+        ) : null}
+      </Pressable>
+      {errors.dateOfBirth ? <Text className="text-[11.5px] text-[#D83A48]">{errors.dateOfBirth}</Text> : null}
 
-          <Text
-            className="text-[18px] font-semibold"
-            style={{ color: '#27374B' }}
-          >
-            Chỉnh sửa hồ sơ
-          </Text>
-        </View>
-
-        <View
-          className="h-9 w-9 items-center justify-center rounded-full"
-          style={{
-            backgroundColor: '#248982',
-          }}
-        >
-          <MaterialCommunityIcons
-            name="account-outline"
-            size={21}
-            color="#FFFFFF"
-          />
-        </View>
-      </View>
-
-      {/* ================ FORM ================ */}
-
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingBottom: 28,
-          }}
-        >
-          {/* ================ AVATAR ================ */}
-
-          <View className="items-center pb-5 pt-6">
-            <Pressable
-              onPress={handleChangeAvatar}
-              accessibilityLabel="Thay đổi ảnh đại diện"
-              className="relative"
-            >
-              <View
-                className="h-[108px] w-[108px] items-center justify-center rounded-full"
-                style={{
-                  backgroundColor: '#98F0E7',
-                  shadowColor: '#30C9BD',
-                  shadowOpacity: 0.2,
-                  shadowRadius: 18,
-                  elevation: 6,
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="account-outline"
-                  size={66}
-                  color="#006D72"
-                />
-              </View>
-
-              <View
-                className="absolute bottom-0 right-0 h-10 w-10 items-center justify-center rounded-full border-[3px] border-[#F8F7FC]"
-                style={{
-                  backgroundColor: '#006A65',
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="camera-outline"
-                  size={21}
-                  color="#FFFFFF"
-                />
-              </View>
-            </Pressable>
-
-            <Text
-              className="mt-4 text-center text-[12px] font-medium"
-              style={{ color: '#526179' }}
-            >
-              Nhấn để thay đổi ảnh đại diện
-            </Text>
-
-            <Text
-              className="text-center text-[11px]"
-              style={{ color: '#8793AB' }}
-            >
-              (Tối đa 5MB, JPG/PNG)
-            </Text>
-          </View>
-
-          {/* ================ FULL NAME ================ */}
-
-          <FieldCard label="Họ và tên" required>
-            <MaterialCommunityIcons
-              name="account-outline"
-              size={21}
-              color="#007A78"
-            />
-
-            <TextInput
-              className="ml-2 flex-1 p-0 text-[16px] font-semibold"
-              style={{ color: COLORS.dark }}
-              value={profile.name}
-              onChangeText={(value) =>
-                updateField('name', value)
-              }
-              placeholder="Nhập họ và tên"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
-          </FieldCard>
-
-          {/* ================ EMAIL ================ */}
-
-          <FieldCard
-            label="Địa chỉ Email"
-            right={
-              emailVerified ? (
-                <View className="flex-row items-center rounded-full bg-[#B5F4EA] px-2.5 py-1">
-                  <MaterialCommunityIcons
-                    name="check-decagram"
-                    size={13}
-                    color="#00766F"
-                  />
-
-                  <Text className="ml-1 text-[10px] font-bold text-[#00766F]">
-                    Đã xác minh
-                  </Text>
-                </View>
-              ) : (
-                <Text className="text-[10px] text-[#8B94A5]">
-                  Chưa xác minh
-                </Text>
-              )
-            }
-          >
-            <MaterialCommunityIcons
-              name="email-outline"
-              size={20}
-              color="#007A78"
-            />
-
-            <TextInput
-              className="ml-2 flex-1 p-0 text-[15px] font-medium"
-              style={{ color: COLORS.dark }}
-              value={profile.email}
-              onChangeText={(value) =>
-                updateField('email', value)
-              }
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="Nhập địa chỉ email"
-              placeholderTextColor="#9CA3AF"
-            />
-          </FieldCard>
-
-          {/* ================ PHONE NUMBER ================ */}
-
-          <FieldCard label="Số điện thoại">
-            <View className="mr-3 rounded-lg bg-[#EDF0FF] px-2.5 py-2">
-              <Text className="text-[12px] font-bold text-[#405A82]">
-                VN +84
-              </Text>
-            </View>
-
-            <TextInput
-              className="flex-1 p-0 text-[16px] font-semibold"
-              style={{ color: COLORS.dark }}
-              value={profile.phone}
-              onChangeText={(value) =>
-                updateField('phone', value)
-              }
-              placeholder="Nhập số điện thoại"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="phone-pad"
-            />
-          </FieldCard>
-
-          {/* ================ CITY ================ */}
-
-          <FieldCard label="Thành phố cư trú">
-            <Pressable
-              onPress={() => setCityModalVisible(true)}
-              className="flex-1 flex-row items-center"
-              accessibilityRole="button"
-            >
-              <MaterialCommunityIcons
-                name="map-marker-outline"
-                size={22}
-                color="#007A78"
-              />
-
-              <Text
-                className="ml-2 flex-1 text-[16px] font-semibold"
-                style={{ color: COLORS.dark }}
-              >
-                {profile.city}
-              </Text>
-
-              <MaterialCommunityIcons
-                name="unfold-more-horizontal"
-                size={21}
-                color="#A4ADC1"
-              />
-            </Pressable>
-          </FieldCard>
-
-          {/* ================ TRAVEL PREFERENCES ================ */}
-
-          <View className="mt-1 rounded-2xl bg-white px-4 py-4">
-            <View className="mb-3 flex-row items-center justify-between">
-              <View className="flex-row items-center">
-                <MaterialCommunityIcons
-                  name="compass-outline"
-                  size={20}
-                  color="#C68B16"
-                />
-
-                <Text
-                  className="ml-2 text-[14px] font-bold"
-                  style={{ color: COLORS.dark }}
-                >
-                  Sở thích du lịch yêu thích
-                </Text>
-              </View>
-
-              <Text className="text-[11px] font-medium text-[#77859A]">
-                {profile.preferences.length}/6 đã chọn
-              </Text>
-            </View>
-
-            <View className="flex-row flex-wrap gap-2">
-              {preferenceOptions.map((item) => (
-                <PreferenceChip
-                  key={item.label}
-                  label={item.label}
-                  icon={item.icon}
-                  selected={profile.preferences.includes(
-                    item.label
-                  )}
-                  onPress={() =>
-                    togglePreference(item.label)
-                  }
-                />
-              ))}
-            </View>
-          </View>
-
-          {/* ================ AI INFORMATION ================ */}
-
-          <LinearGradient
-            colors={['#D6FAF6', '#E7E9FF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{
-              marginTop: 16,
-              padding: 12,
-              borderRadius: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-            }}
-          >
-            <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#9EF1E7]">
-              <MaterialCommunityIcons
-                name="auto-fix"
-                size={22}
-                color="#007A78"
-              />
-            </View>
-
-            <Text
-              className="flex-1 text-[12px] leading-[18px]"
-              style={{
-                color: '#526C83',
-              }}
-            >
-              Thông tin hồ sơ giúp AI thiết kế lộ trình
-              cá nhân hóa chính xác hơn theo phong cách
-              của bạn.
-            </Text>
-          </LinearGradient>
-
-          {/* ================ SAVE BUTTON ================ */}
-
-          <Pressable
-            onPress={handleSave}
-            className="mt-5 h-[53px] flex-row items-center justify-center rounded-full bg-[#006C64] active:opacity-80"
-            style={{
-              elevation: 3,
-            }}
-          >
-            <MaterialCommunityIcons
-              name="check-circle-outline"
-              size={23}
-              color="#FFFFFF"
-            />
-
-            <Text className="ml-2 text-[16px] font-bold text-white">
-              Lưu thay đổi
-            </Text>
-          </Pressable>
-
-          {/* ================ CANCEL BUTTON ================ */}
-
-          <Pressable
-            onPress={handleBack}
-            className="mt-3 h-[48px] items-center justify-center rounded-full bg-[#E9EBFF] active:opacity-80"
-          >
-            <Text
-              className="text-[15px] font-semibold"
-              style={{ color: '#334E68' }}
-            >
-              Hủy bỏ
-            </Text>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* ================ CITY SELECTION MODAL ================ */}
-
-      <Modal
-        visible={cityModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setCityModalVisible(false)
-        }
-      >
-        <View className="flex-1 items-center justify-center bg-black/40 px-6">
-          <View className="w-full overflow-hidden rounded-3xl bg-white p-5">
-            <Text className="mb-4 text-center text-[17px] font-bold text-[#123747]">
-              Chọn thành phố cư trú
-            </Text>
-
-            <ScrollView
-              style={{ maxHeight: 360 }}
-              showsVerticalScrollIndicator={false}
-            >
-              {cityOptions.map((city) => {
-                const selected = profile.city === city;
-
-                return (
-                  <Pressable
-                    key={city}
-                    onPress={() => {
-                      updateField('city', city);
-                      setCityModalVisible(false);
-                    }}
-                    className="flex-row items-center justify-between border-b border-[#F1F2F7] py-3.5"
-                  >
-                    <Text
-                      className="text-[14px]"
-                      style={{
-                        color: selected
-                          ? '#00766F'
-                          : '#35465B',
-                        fontWeight: selected
-                          ? '700'
-                          : '500',
-                      }}
-                    >
-                      {city}
-                    </Text>
-
-                    {selected && (
-                      <MaterialCommunityIcons
-                        name="check-circle"
-                        size={19}
-                        color="#00867E"
-                      />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            <Pressable
-              onPress={() =>
-                setCityModalVisible(false)
-              }
-              className="mt-4 items-center rounded-xl bg-[#E9EBFF] py-3"
-            >
-              <Text className="font-semibold text-[#465A75]">
-                Đóng
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+      <DatePickerSheet
+        visible={pickingDate}
+        title="Ngày sinh"
+        value={dateOfBirth || null}
+        max={addDays(todayIso(), -1)}
+        onClose={() => setPickingDate(false)}
+        onSelect={setDateOfBirth}
+      />
+    </Screen>
   );
 }

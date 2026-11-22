@@ -1,0 +1,814 @@
+
+import { buildQuery, clientRequest } from './http';
+
+/**
+ * Luồng Smart Travel:
+ * Tạo Travel Plan -> lấy địa điểm ứng viên -> chọn địa điểm
+ * -> Backend tự xếp lịch -> xem lịch trình và chi phí.
+ *
+ * Mọi endpoint đều dùng clientRequest để gửi Bearer Token của Traveller.
+ * API_URL đã được cấu hình trong src/services/config.ts.
+ */
+
+export type TravelPace = 'RELAXED' | 'BALANCED' | 'PACKED';
+
+export type PlanStatus =
+  | 'DRAFT'
+  | 'PLANNED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export interface CreateTravelPlanInput {
+  title: string;
+  destination: string;
+
+  /** Ngày dạng yyyy-MM-dd */
+  startDate: string;
+  endDate: string;
+
+  budget: number | null;
+  currency: string;
+  groupSize: number;
+  description: string | null;
+
+  /** Mã danh mục con */
+  categoryCodes: string[];
+
+  /** Mã sở thích */
+  interestCodes?: string[];
+
+  /** Mã đáp án của 4 câu hỏi cá nhân hóa chuyến đi. */
+  experiencePreferences?: string[];
+
+  travelPace: TravelPace;
+}
+
+export type UpdateTravelPlanInput = CreateTravelPlanInput;
+
+export interface TravelPlanResponse extends CreateTravelPlanInput {
+  planId: number;
+  userId: number;
+  interestCodes: string[];
+  experiencePreferences: string[];
+  status: PlanStatus;
+  allowedNextStatuses: PlanStatus[];
+  createdAt: string;
+  updatedAt: string;
+  /** Tổng chi phí Backend tính từ lịch trình ACTIVE; null nếu chưa có lịch trình. Khác với budget. */
+  estimatedCost: number | null;
+}
+
+export interface TripPlace {
+  placeId: number;
+  name: string;
+  address: string | null;
+  province: string | null;
+  categoryCode: string | null;
+  categoryName: string | null;
+  imageUrl: string | null;
+  estimatedCost: number | null;
+  currency: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  selected: boolean;
+  source: string;
+
+  aiRank?: number;
+  aiScore?: number;
+  aiBreakdown?: AiScoreBreakdown;
+  aiMatchPercent?: number;
+  aiMatchLabel?: string;
+  aiReasons?: string[];
+  aiCautions?: string[];
+}
+
+export interface AiScoreBreakdown {
+  semanticScore: number | null;
+  categoryScore: number;
+  budgetScore: number;
+}
+
+export interface AiRecommendedPlace {
+  rank: number;
+  placeId: number;
+  name: string;
+  address: string | null;
+  categoryCode: string | null;
+  categoryCodes: string[];
+  imageUrl: string | null;
+  priceType: string | null;
+  referencePrice: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  score: number;
+  breakdown: AiScoreBreakdown;
+  /** Độ phù hợp 0–100 */
+  matchPercent?: number;
+  /** Rất phù hợp / Phù hợp / Có thể bạn thích */
+  matchLabel?: string;
+  /** Lý do gợi ý (tối đa 4) */
+  reasons?: string[];
+  /** Lưu ý: chi phí cao, phải leo trèo… */
+  cautions?: string[];
+}
+
+export interface AiRecommendationResponse {
+  planId: number;
+  needed: number;
+  available: number;
+  degraded: boolean;
+  items: AiRecommendedPlace[];
+  warnings: string[];
+}
+
+export function toAiTripPlace(
+  place: AiRecommendedPlace,
+  destination: string,
+): TripPlace {
+  return {
+    placeId: place.placeId,
+    name: place.name,
+    address: place.address,
+    province: destination,
+    categoryCode: place.categoryCode,
+    categoryName: place.categoryCode,
+    imageUrl: place.imageUrl,
+    estimatedCost: place.referencePrice,
+    currency: 'VND',
+    latitude: place.latitude,
+    longitude: place.longitude,
+    selected: false,
+    source: 'AI',
+    aiRank: place.rank,
+    aiScore: place.score,
+    aiBreakdown: place.breakdown,
+    aiMatchPercent: place.matchPercent ?? Math.round(place.score * 100),
+    aiMatchLabel: place.matchLabel,
+    aiReasons: place.reasons ?? [],
+    aiCautions: place.cautions ?? [],
+  };
+}
+
+export interface SelectedPlacesResponse {
+  planId: number;
+  count: number;
+  places: TripPlace[];
+}
+
+export interface GenerateItineraryInput {
+  title?: string;
+  notes?: string;
+}
+
+export interface ItineraryDay {
+  dayId: number;
+  dayNumber: number;
+  visitDate: string;
+  title: string;
+  notes: string | null;
+}
+
+export interface GeneratedItinerary {
+  itineraryId: number;
+  planId: number;
+  title: string;
+  versionNumber: number;
+  status: string;
+  currency: string;
+  startDate: string;
+  endDate: string;
+  days: ItineraryDay[];
+  /** Cảnh báo khi tạo lịch trình (quá nhiều/ít địa điểm, ngoài giờ mở cửa…); không chặn việc tạo. */
+  warnings?: string[];
+}
+
+export interface ItineraryActivity {
+  itemId: number;
+  itemOrder: number;
+  placeId: number;
+  placeName: string;
+  placeAddress: string | null;
+
+  /**
+   * Tọa độ điểm đến.
+   * Không phải GPS hiện tại của Traveller.
+   */
+  latitude: number | null;
+  longitude: number | null;
+
+  startTime: string | null;
+  endTime: string | null;
+  estimatedCost: number | null;
+  transportModeId: number | null;
+  transportModeName: string | null;
+  travelTimeMinutes: number | null;
+  notes: string | null;
+  status: string;
+}
+
+export interface ItineraryOverviewDay extends ItineraryDay {
+  estimatedCost: number;
+  activities: ItineraryActivity[];
+}
+
+export interface ItineraryOverview {
+  itineraryId: number;
+  planId: number;
+  planTitle: string;
+  destination: string;
+  itineraryTitle: string;
+  versionNumber: number;
+  generationSource: string;
+  status: string;
+  currency: string;
+  itineraryNotes: string | null;
+  startDate: string;
+  endDate: string;
+  budget: number | null;
+  totalEstimatedCost: number;
+  days: ItineraryOverviewDay[];
+}
+
+/**
+ * DTO quản lý hoạt động trong lịch trình.
+ */
+export interface ItineraryItem {
+  itemId: number;
+  dayId: number;
+  itemOrder: number;
+  placeId: number;
+  placeName: string;
+  startTime: string | null;
+  endTime: string | null;
+  estimatedCost: number | null;
+  transportModeId: number | null;
+  transportModeName: string | null;
+  travelTimeMinutes: number | null;
+  notes: string | null;
+  status: string;
+}
+
+export interface CreateItineraryItemInput {
+  placeId: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  estimatedCost?: number | null;
+  transportModeId?: number | null;
+  travelTimeMinutes?: number | null;
+  notes?: string | null;
+}
+
+export interface UpdateItineraryItemInput {
+  placeId?: number | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  estimatedCost?: number | null;
+  transportModeId?: number | null;
+  travelTimeMinutes?: number | null;
+  notes?: string | null;
+  status?: string | null;
+}
+
+// ==========================================================
+// TRIP PROGRESS — TIẾN ĐỘ CHUYẾN ĐI
+// ==========================================================
+
+export type TripExecutionStatus =
+  | 'NOT_STARTED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export type TripActivityStatus =
+  | 'PENDING'
+  | 'COMPLETED'
+  | 'SKIPPED';
+
+export type GoongVehicle =
+  | 'car'
+  | 'bike'
+  | 'taxi'
+  | 'truck'
+  | 'hd';
+
+/**
+ * Tiến độ của từng địa điểm.
+ */
+export interface TripActivityProgress {
+  activityProgressId: number | null;
+  itemId: number;
+  itemOrder: number;
+  placeId: number;
+  placeName: string;
+  status: TripActivityStatus;
+  completedAt: string | null;
+  notes: string | null;
+}
+
+/**
+ * Tiến độ của từng ngày.
+ */
+export interface TripDayProgress {
+  dayProgressId: number | null;
+  dayId: number;
+  dayNumber: number;
+  visitDate: string;
+  title: string;
+  status: TripExecutionStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  activities: TripActivityProgress[];
+}
+
+/**
+ * Tiến độ toàn bộ chuyến đi.
+ */
+export interface TripProgressResponse {
+  progressId: number | null;
+  planId: number;
+  itineraryId: number;
+  status: TripExecutionStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  days: TripDayProgress[];
+}
+
+// ==========================================================
+// GOONG MAPS — CHỈ ĐƯỜNG
+// ==========================================================
+
+/**
+ * Tuyến đường do Goong Directions API trả về.
+ */
+export interface GoongRoute {
+  distanceMeters: number;
+  durationSeconds: number;
+  distanceText: string | null;
+  durationText: string | null;
+
+  /**
+   * Encoded polyline của tuyến đường.
+   * Frontend giải mã và vẽ trên MapLibre.
+   */
+  polyline: string;
+
+  /**
+   * Chỉ dẫn từng bước rẽ theo thứ tự đi. Có thể rỗng khi Goong không trả về.
+   */
+  steps?: GoongRouteStep[];
+}
+
+/**
+ * Một bước rẽ của tuyến. Điểm bắt đầu là nơi cần thực hiện chỉ dẫn.
+ */
+export interface GoongRouteStep {
+  instruction: string;
+  maneuver: string | null;
+  distanceMeters: number;
+  durationSeconds: number;
+  distanceText: string | null;
+  startLatitude: number;
+  startLongitude: number;
+  endLatitude: number;
+  endLongitude: number;
+}
+
+/**
+ * Điểm đến tiếp theo cùng tuyến Goong.
+ */
+export interface NextTripRoute {
+  planId: number;
+  itineraryId: number;
+  dayId: number;
+  dayNumber: number;
+  itemId: number;
+  itemOrder: number;
+  placeId: number;
+  placeName: string;
+  placeAddress: string | null;
+  destinationLatitude: number;
+  destinationLongitude: number;
+  vehicle: GoongVehicle;
+  route: GoongRoute;
+
+  /** Khoảng cách đường chim bay từ GPS tới điểm đến (mét). */
+  straightLineMeters?: number;
+
+  /** Backend thấy GPS đã nằm trong bán kính đến nơi. */
+  arrived?: boolean;
+
+  /** Sai số GPS lớn nên vị trí chỉ mang tính tham khảo. */
+  lowAccuracy?: boolean;
+}
+
+// ==========================================================
+// TRIP FEEDBACK — ĐÁNH GIÁ CHUYẾN ĐI
+// ==========================================================
+
+/**
+ * Đánh giá chuyến đi: 1-5 sao + nhận xét.
+ * Chỉ khi kế hoạch COMPLETED, mỗi khách một lần cho mỗi kế hoạch.
+ */
+export interface TripFeedbackResponse {
+  feedbackId: number;
+  planId: number;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+}
+
+export interface CreateTripFeedbackInput {
+  rating: number;
+  comment?: string | null;
+}
+
+export interface EditActivityInput {
+  itineraryId: number;
+  itemId: number;
+  /** HH:mm:ss */
+  startTime?: string;
+  endTime?: string;
+  placeId?: number;
+  swapWithItemId?: number;
+}
+
+// ==========================================================
+// API PATHS
+// ==========================================================
+
+const progressPath = (planId: number) =>
+  `/travel-plans/${planId}/trip-progress`;
+
+const planPath = (planId: number) =>
+  `/travel-plans/${planId}`;
+
+const dayItemsPath = (dayId: number) =>
+  `/itinerary-days/${dayId}/items`;
+
+const feedbackPath = (planId: number) =>
+  `${planPath(planId)}/feedback`;
+
+/** GET /travel-plans/{planId}/partner-places: điểm do đối tác đã xác minh đăng ký. */
+export interface PartnerPlace {
+  placeId: number;
+  name: string;
+  categoryCode: string | null;
+  categoryName: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  coverUrl: string | null;
+  rating: number | null;
+  reviewCount: number;
+  businessName: string;
+  verified: boolean;
+}
+
+// ==========================================================
+// TRIP FLOW API
+// ==========================================================
+
+export const tripFlowApi = {
+
+  // ========================================================
+  // 1. TRAVEL PLAN
+  // ========================================================
+
+  createPlan: (input: CreateTravelPlanInput) =>
+    clientRequest<TravelPlanResponse>('/travel-plans', {
+      method: 'POST',
+      body: input,
+    }),
+
+  plans: () =>
+    clientRequest<TravelPlanResponse[]>('/travel-plans'),
+
+  plan: (planId: number) =>
+    clientRequest<TravelPlanResponse>(planPath(planId)),
+
+  // ========================================================
+  // 2. AI RECOMMENDATION
+  // ========================================================
+
+  recommendedPlaces: (planId: number) =>
+    clientRequest<AiRecommendationResponse>(
+      `${planPath(planId)}/recommended-places`,
+      {
+        timeoutMs: 60_000,
+      },
+    ),
+
+  /** Địa điểm của đối tác đã xác minh tại điểm đến của kế hoạch (cột riêng ở màn Gợi ý). */
+  partnerPlaces: (planId: number) =>
+    clientRequest<PartnerPlace[]>(`${planPath(planId)}/partner-places`),
+
+  // ========================================================
+  // 3. UPDATE / DELETE / STATUS
+  // ========================================================
+
+  updatePlan: (
+    planId: number,
+    input: UpdateTravelPlanInput,
+  ) =>
+    clientRequest<TravelPlanResponse>(planPath(planId), {
+      method: 'PUT',
+      body: input,
+    }),
+
+  deletePlan: (planId: number) =>
+    clientRequest<void>(planPath(planId), {
+      method: 'DELETE',
+    }),
+
+  changeStatus: (
+    planId: number,
+    status: PlanStatus,
+  ) =>
+    clientRequest<TravelPlanResponse>(
+      `${planPath(planId)}/status`,
+      {
+        method: 'PATCH',
+        body: { status },
+      },
+    ),
+
+  // ========================================================
+  // 4. PLACES
+  // ========================================================
+
+  candidatePlaces: (planId: number) =>
+    clientRequest<TripPlace[]>(
+      `${planPath(planId)}/candidate-places`,
+    ),
+
+  selectedPlaces: (planId: number) =>
+    clientRequest<SelectedPlacesResponse>(
+      `${planPath(planId)}/places`,
+    ),
+
+  addPlace: (
+    planId: number,
+    placeId: number,
+  ) =>
+    clientRequest<TripPlace>(
+      `${planPath(planId)}/places`,
+      {
+        method: 'POST',
+        body: { placeId },
+      },
+    ),
+
+  removePlace: (
+    planId: number,
+    placeId: number,
+  ) =>
+    clientRequest<void>(
+      `${planPath(planId)}/places/${placeId}`,
+      {
+        method: 'DELETE',
+      },
+    ),
+
+  // ========================================================
+  // 5. GENERATE ITINERARY
+  // ========================================================
+
+  generate: (
+    planId: number,
+    input: GenerateItineraryInput = {},
+  ) =>
+    clientRequest<GeneratedItinerary>(
+      `${planPath(planId)}/itineraries`,
+      {
+        method: 'POST',
+        body: input,
+        timeoutMs: 60_000,
+      },
+    ),
+
+  activeItinerary: (planId: number) =>
+    clientRequest<GeneratedItinerary>(
+      `${planPath(planId)}/itineraries/active`,
+    ),
+
+  // ========================================================
+  // 6. ITINERARY OVERVIEW
+  // ========================================================
+
+  overview: (planId: number) =>
+    clientRequest<ItineraryOverview>(
+      `${planPath(planId)}/itineraries/active/overview`,
+    ),
+
+  overviewById: (
+    planId: number,
+    itineraryId: number,
+  ) =>
+    clientRequest<ItineraryOverview>(
+      `${planPath(planId)}/itineraries/${itineraryId}/overview`,
+    ),
+
+  // ========================================================
+  // 7. TRIP PROGRESS
+  // ========================================================
+
+  /**
+   * Lấy tiến độ toàn chuyến.
+   *
+   * GET /travel-plans/{planId}/trip-progress
+   */
+  tripProgress: (planId: number) =>
+    clientRequest<TripProgressResponse>(
+      progressPath(planId),
+    ),
+
+  /**
+   * Bắt đầu một ngày.
+   *
+   * POST /trip-progress/days/{dayNumber}/start
+   */
+  startTripDay: (
+    planId: number,
+    dayNumber: number,
+  ) =>
+    clientRequest<TripProgressResponse>(
+      `${progressPath(planId)}/days/${dayNumber}/start`,
+      {
+        method: 'POST',
+      },
+    ),
+
+  /**
+   * Đánh dấu hoàn thành hoặc bỏ qua địa điểm.
+   *
+   * PATCH /trip-progress/days/{dayNumber}/activities/{itemId}
+   */
+  updateTripActivity: (
+    planId: number,
+    dayNumber: number,
+    itemId: number,
+    status: 'COMPLETED' | 'SKIPPED',
+    notes: string | null = null,
+  ) =>
+    clientRequest<TripProgressResponse>(
+      `${progressPath(planId)}/days/${dayNumber}/activities/${itemId}`,
+      {
+        method: 'PATCH',
+        body: {
+          status,
+          notes,
+        },
+      },
+    ),
+
+  /**
+   * Hoàn thành một ngày.
+   *
+   * POST /trip-progress/days/{dayNumber}/complete
+   */
+  completeTripDay: (
+    planId: number,
+    dayNumber: number,
+  ) =>
+    clientRequest<TripProgressResponse>(
+      `${progressPath(planId)}/days/${dayNumber}/complete`,
+      {
+        method: 'POST',
+      },
+    ),
+
+  // ========================================================
+  // 8. GPS + GOONG MAPS NAVIGATION
+  // ========================================================
+
+  /**
+   * Chỉ đường từ GPS hiện tại đến địa điểm tiếp theo.
+   *
+   * Backend:
+   * GET /travel-plans/{planId}/navigation/days/{dayNumber}/next-route
+   *
+   * Backend tự tìm địa điểm PENDING đầu tiên
+   * và gọi Goong Directions API.
+   */
+  nextTripRoute: (
+    planId: number,
+    dayNumber: number,
+    latitude: number,
+    longitude: number,
+    vehicle: GoongVehicle = 'car',
+    accuracy?: number,
+  ) => {
+    // Sai số GPS (mét): backend dùng để quyết định bán kính "đã đến nơi".
+    const query = buildQuery({
+      fromLat: latitude,
+      fromLng: longitude,
+      vehicle,
+      accuracy:
+        typeof accuracy === 'number' && Number.isFinite(accuracy)
+          ? Math.round(accuracy)
+          : undefined,
+    });
+
+    return clientRequest<NextTripRoute>(
+      `${planPath(planId)}/navigation/days/${dayNumber}/next-route?${query}`,
+      {
+        timeoutMs: 25_000,
+      },
+    );
+  },
+
+  // ========================================================
+  // 9. ITINERARY ITEM CRUD
+  // ========================================================
+
+  dayItems: (dayId: number) =>
+    clientRequest<ItineraryItem[]>(
+      dayItemsPath(dayId),
+    ),
+
+  addItem: (
+    dayId: number,
+    input: CreateItineraryItemInput,
+  ) =>
+    clientRequest<ItineraryItem>(
+      dayItemsPath(dayId),
+      {
+        method: 'POST',
+        body: input,
+      },
+    ),
+
+  updateItem: (
+    dayId: number,
+    itemId: number,
+    input: UpdateItineraryItemInput,
+  ) =>
+    clientRequest<ItineraryItem>(
+      `${dayItemsPath(dayId)}/${itemId}`,
+      {
+        method: 'PUT',
+        body: input,
+      },
+    ),
+
+  removeItem: (
+    dayId: number,
+    itemId: number,
+  ) =>
+    clientRequest<void>(
+      `${dayItemsPath(dayId)}/${itemId}`,
+      {
+        method: 'DELETE',
+      },
+    ),
+
+  reorderItems: (
+    dayId: number,
+    itemIds: number[],
+  ) =>
+    clientRequest<ItineraryItem[]>(
+      `${dayItemsPath(dayId)}/order`,
+      {
+        method: 'PUT',
+        body: { itemIds },
+      },
+    ),
+
+  /**
+   * Sửa một hoạt động của lịch trình đang dùng: đổi giờ, thay địa điểm (placeId) hoặc hoán đổi
+   * với hoạt động khác (swapWithItemId). Giống EditActivityModal của web.
+   */
+  editActivity: (planId: number, input: EditActivityInput) =>
+    clientRequest<void>(`${planPath(planId)}/itineraries/active/edit-activity`, {
+      method: 'PUT',
+      body: input,
+    }),
+
+  // ========================================================
+  // 10. TRIP FEEDBACK
+  // ========================================================
+
+  /**
+   * Đánh giá đã có của kế hoạch (nếu có).
+   *
+   * GET /travel-plans/{planId}/feedback
+   * Backend trả 404 nếu khách chưa đánh giá kế hoạch này.
+   */
+  feedback: (planId: number) =>
+    clientRequest<TripFeedbackResponse>(
+      feedbackPath(planId),
+    ),
+
+  createFeedback: (
+    planId: number,
+    input: CreateTripFeedbackInput,
+  ) =>
+    clientRequest<TripFeedbackResponse>(
+      feedbackPath(planId),
+      {
+        method: 'POST',
+        body: input,
+      },
+    ),
+};

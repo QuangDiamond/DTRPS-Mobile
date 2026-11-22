@@ -13,7 +13,20 @@
     },
     "plugins": [
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SmartTravel dùng vị trí của bạn để chỉ đường tới địa điểm tiếp theo trong chuyến đi."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SmartTravel cần truy cập ảnh để bạn đổi ảnh đại diện và đính kèm ảnh khi đánh giá địa điểm."
+        }
+      ],
+      "@maplibre/maplibre-react-native"
     ]
   }
 }

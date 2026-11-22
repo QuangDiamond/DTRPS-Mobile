@@ -1,11 +1,155 @@
-import React,{useState} from 'react';
-import { View, Text, Alert } from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../types/featureRoutes';
-import { Brand, Field, PrimaryButton, LinkText, validEmail } from '../../components/common/UI';
-import { authService } from '../../services/auth';
-type Props<K extends keyof RootStackParamList>=NativeStackScreenProps<RootStackParamList,K>;
+import { useState } from 'react';
+import { View } from 'react-native';
+import { Text } from '../../ui/Typography';
+import { authApi, type OtpSent } from '../../api/authApi';
+import { ClientApiError, errorMessage } from '../../api/http';
+import type { RootScreenProps } from '../../navigation/types';
+import { Button } from '../../ui/Button';
+import { Field } from '../../ui/Field';
+import { Notice } from '../../ui/States';
+import { isValidEmail, isValidPassword, PASSWORD_HINT } from '../../utils/validation';
+import { AuthShell, AuthTitle, FooterLink, OtpStep, PasswordChecklist, StepIndicator } from './AuthParts';
 
-import { Shell } from '../../components/common/AuthLayout';
+const STEPS = ['Email', 'Xác thực', 'Mật khẩu mới'];
 
-export function ForgotPasswordScreen({navigation}:Props<'ForgotPassword'>){const [email,setEmail]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);const submit=async()=>{if(!validEmail(email)){setError('Vui lòng nhập email hợp lệ');return}setError('');setBusy(true);try{await authService.requestPasswordReset(email.trim())}catch(err){Alert.alert('Chưa kết nối backend',(err as Error).message)}finally{setBusy(false)}};return <Shell back={()=>navigation.goBack()}><Brand/><Text className="text-center text-[22px] font-extrabold text-[#19333F]">Quên mật khẩu? 🔐</Text><Text className="text-center text-[12px] text-[#63737E] mt-2 mb-7">Đừng lo lắng! Hãy nhập địa chỉ email đã đăng ký của bạn. Chúng tôi sẽ gửi hướng dẫn kèm liên kết đặt lại mật khẩu an toàn.</Text><View className="bg-white rounded-2xl p-4"><Field label="Địa chỉ Email" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="hoang.nam@email.com" error={error}/><View className="rounded-xl bg-[#DFF9F5] p-3 mb-4"><Text className="text-[#147C75] text-[12px]">🛡️ Mẹo bảo mật: Liên kết khôi phục sẽ có hiệu lực trong thời gian giới hạn khi backend được kết nối.</Text></View><PrimaryButton title="Gửi link khôi phục" onPress={submit} loading={busy}/></View><View className="bg-white rounded-xl p-4 mt-4"><Text className="text-[13px] font-bold text-[#263C4A]">Nhận mã xác thực qua SMS / Zalo</Text><Text className="text-[11px] text-[#81909B] mt-1">Tùy chọn này sẽ được tích hợp sau.</Text></View><LinkText title="← Quay lại Đăng nhập" onPress={()=>navigation.navigate('Login')}/></Shell>}
+const TITLES = [
+  { title: 'Quên mật khẩu', subtitle: 'Nhập email đã đăng ký — chúng tôi sẽ gửi mã 6 số để đặt lại mật khẩu.' },
+  { title: 'Xác thực email', subtitle: 'Nhập mã 6 số trong email vừa nhận.' },
+  { title: 'Mật khẩu mới', subtitle: 'Tạo mật khẩu mới. Các thiết bị đang đăng nhập sẽ được đăng xuất để an toàn.' },
+];
+
+/** Quên mật khẩu 3 bước: email → mã OTP → mật khẩu mới (giống web) */
+export default function ForgotPasswordScreen({ navigation }: RootScreenProps<'ForgotPassword'>) {
+  const [step, setStep] = useState(0);
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState<OtpSent | null>(null);
+  const [ticket, setTicket] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const fail = (error: unknown) => {
+    if (error instanceof ClientApiError && Object.keys(error.fieldErrors).length > 0) {
+      setErrors(error.fieldErrors);
+    }
+    setFormError(errorMessage(error));
+    setBusy(false);
+  };
+
+  const sendCode = async () => {
+    setFormError(null);
+    if (!isValidEmail(email)) {
+      setErrors({ email: 'Vui lòng nhập email hợp lệ' });
+      return;
+    }
+    setErrors({});
+    setBusy(true);
+    try {
+      setSent(await authApi.sendResetCode(email));
+      setStep(1);
+      setBusy(false);
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  const finish = async () => {
+    const next: Record<string, string> = {};
+    if (!isValidPassword(password)) next.password = PASSWORD_HINT;
+    if (confirm !== password) next.confirm = 'Mật khẩu nhập lại chưa khớp';
+    setErrors(next);
+    setFormError(null);
+    if (Object.keys(next).length > 0) return;
+
+    setBusy(true);
+    try {
+      await authApi.resetPassword(ticket, password);
+      navigation.replace('Login', {
+        email,
+        notice: 'Đã đặt lại mật khẩu. Hãy đăng nhập bằng mật khẩu mới.',
+      });
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  return (
+    <AuthShell onBack={() => navigation.goBack()}>
+      <AuthTitle title={TITLES[step].title} subtitle={TITLES[step].subtitle} />
+      <StepIndicator steps={STEPS} current={step} />
+
+      {step === 0 ? (
+        <View>
+          {formError ? <Notice tone="danger">{formError}</Notice> : null}
+          <Field
+            label="Email"
+            icon="mail-outline"
+            placeholder="ban@gmail.com"
+            keyboardType="email-address"
+            autoComplete="email"
+            value={email}
+            onChangeText={setEmail}
+            error={errors.email}
+          />
+          <Button title="Gửi mã xác thực" loading={busy} onPress={() => void sendCode()} />
+        </View>
+      ) : null}
+
+      {step === 1 && sent ? (
+        <View>
+          <Text className="-mt-2 mb-3 text-center text-[12px] leading-5 text-[#8A99A6]">
+            Nếu email này đã đăng ký, mã sẽ được gửi tới hộp thư của bạn.
+          </Text>
+          <OtpStep
+            email={email}
+            sent={sent}
+            onVerify={async (code) => {
+              const result = await authApi.verifyResetCode(email, code);
+              setTicket(result.ticket);
+              setErrors({});
+              setFormError(null);
+              setStep(2);
+            }}
+            onResend={() => authApi.sendResetCode(email)}
+            onChangeEmail={() => {
+              setStep(0);
+              setSent(null);
+            }}
+          />
+        </View>
+      ) : null}
+
+      {step === 2 ? (
+        <View>
+          {formError ? <Notice tone="danger">{formError}</Notice> : null}
+          <Field
+            label="Mật khẩu mới"
+            icon="lock-outline"
+            placeholder="Tạo mật khẩu mới"
+            secure
+            autoComplete="new-password"
+            value={password}
+            onChangeText={setPassword}
+            error={errors.password ?? errors.newPassword}
+          />
+          <PasswordChecklist password={password} />
+          <Field
+            label="Nhập lại mật khẩu mới"
+            icon="lock-outline"
+            placeholder="Nhập lại mật khẩu"
+            secure
+            autoComplete="new-password"
+            value={confirm}
+            onChangeText={setConfirm}
+            error={errors.confirm}
+          />
+          <Button title="Đặt lại mật khẩu" loading={busy} onPress={() => void finish()} />
+        </View>
+      ) : null}
+
+      <FooterLink text="Nhớ ra mật khẩu?" link="Đăng nhập" onPress={() => navigation.navigate('Login')} />
+    </AuthShell>
+  );
+}

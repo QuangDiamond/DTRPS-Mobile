@@ -1,394 +1,171 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Easing,
-  Image,
-  Pressable,
-  ScrollView,
-  StatusBar,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Easing, View } from 'react-native';
+import { Text } from '../../ui/Typography';
+import { errorMessage } from '../../api/http';
+import { tripFlowApi, type AiRecommendationResponse, type TravelPlanResponse } from '../../api/tripFlowApi';
+import type { RootScreenProps } from '../../navigation/types';
+import { colors } from '../../theme';
+import { Button } from '../../ui/Button';
+import { Icon } from '../../ui/Icon';
+import { Screen } from '../../ui/Screen';
+import { Notice } from '../../ui/States';
 
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { planDestinations } from '../../constants/planTrip';
-import type { TripPlan } from './PlanTripScreen';
-import { tripPlanToCreateInput } from './planTripMapping';
-import { tripFlowApi, type AiRecommendationResponse } from '../../services/tripFlowApi';
-import { errorMessage } from '../../services/httpClient';
-
-// ==================== TYPES ====================
-
-type GeneratingTripScreenProps = {
-  plan: TripPlan;
-  onCancel: () => void;
-  /** Gọi khi đã tạo Travel Plan thật + lấy xong gợi ý AI từ Backend. */
-  onDone: (planId: number, recommendation: AiRecommendationResponse) => void;
-};
-
-// ==================== CONFIG ====================
-
-const COLORS = {
-  primary: '#087A78',
-  primaryDark: '#075C66',
-  text: '#13364A',
-  muted: '#72818C',
-  background: '#F8F8FF',
-  lightPurple: '#EBEDFF',
-  mint: '#C3F8F0',
-  white: '#FFFFFF',
-};
-
-/** Tổng thời gian giả lập tạo lịch trình (ms) */
+// Thời gian hiệu ứng (giống web) — KHÔNG phải thời gian xử lý của AI
 const TOTAL_DURATION = 8000;
-
-const steps = [
-  { doing: 'Đang chọn lọc danh lam thắng cảnh phù hợp', done: 'Đã chọn lọc danh lam thắng cảnh phù hợp' },
-  { doing: 'Đang cập nhật thông tin thời tiết dự báo', done: 'Đã cập nhật thông tin thời tiết dự báo' },
-  { doing: 'Đang cân đối thời gian và lộ trình di chuyển', done: 'Đã cân đối thời gian và lộ trình di chuyển' },
-  { doing: 'Chuẩn bị bảng dự toán chi phí theo ngân sách', done: 'Đã lập bảng dự toán chi phí theo ngân sách' },
+const STEPS = [
+  { doing: 'Đang xác nhận kế hoạch chuyến đi', done: 'Đã xác nhận kế hoạch được lưu' },
+  { doing: 'Đang đọc sở thích trải nghiệm của bạn', done: 'Đã tải sở thích trải nghiệm' },
+  { doing: 'SmartTravel đang tìm và xếp hạng địa điểm phù hợp', done: 'SmartTravel đã xếp hạng các địa điểm' },
+  { doing: 'Đang chuẩn bị màn hình lựa chọn địa điểm', done: 'Sẵn sàng để bạn chọn địa điểm' },
 ];
+const easeOutQuad = (ratio: number) => 1 - (1 - ratio) * (1 - ratio);
 
-// ==================== GLOBE ANIMATION ====================
-
-function GlobeAnimation({ finished }: { finished: boolean }) {
+function Globe({ finished, stopped }: { finished: boolean; stopped: boolean }) {
   const spin = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
-    const spinLoop = Animated.loop(
-      Animated.timing(spin, {
-        toValue: 1,
-        duration: 5000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
+    if (stopped) return;
+    const loop = Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 5000, easing: Easing.linear, useNativeDriver: true }),
     );
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1200, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1200, useNativeDriver: true }),
-      ])
-    );
-
-    spinLoop.start();
-    pulseLoop.start();
-
-    return () => {
-      spinLoop.stop();
-      pulseLoop.stop();
-    };
-  }, [spin, pulse]);
-
+    loop.start();
+    return () => loop.stop();
+  }, [spin, stopped]);
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
-
   return (
     <View className="h-[210px] w-[210px] items-center justify-center self-center">
-      {/* Vòng sáng ngoài */}
-      <Animated.View
-        className="absolute h-[200px] w-[200px] rounded-full"
-        style={{
-          borderWidth: 1,
-          borderColor: '#D8EEF0',
-          backgroundColor: '#F2FBFA',
-          transform: [{ scale }],
-        }}
-      />
-      <View
-        className="absolute h-[160px] w-[160px] rounded-full"
-        style={{ borderWidth: 1, borderColor: '#D8EEF0' }}
-      />
-
-      {/* Quỹ đạo quay: máy bay + chấm */}
-      <Animated.View
-        className="absolute h-[200px] w-[200px]"
-        style={{ transform: [{ rotate }] }}
-      >
-        <View
-          className="absolute right-[18px] top-[18px] h-8 w-8 items-center justify-center rounded-full bg-white"
-          style={{ elevation: 3, shadowOpacity: 0.12, shadowRadius: 6 }}
-        >
-          <MaterialCommunityIcons name="airplane" size={17} color={COLORS.primaryDark} />
-        </View>
-        <View
-          className="absolute bottom-[30px] left-[12px] h-3 w-3 rounded-full border-2 border-white"
-          style={{ backgroundColor: '#1BB59F' }}
-        />
-      </Animated.View>
-
-      {/* Quả địa cầu */}
-      <View
-        className="h-[118px] w-[118px] items-center justify-center rounded-full bg-white"
-        style={{ elevation: 6, shadowOpacity: 0.1, shadowRadius: 12 }}
-      >
-        <MaterialCommunityIcons
-          name={finished ? 'check-decagram' : 'web'}
-          size={72}
-          color={finished ? COLORS.primary : '#2BB5A3'}
-        />
+      <View className="absolute h-[200px] w-[200px] rounded-full border border-[#D7EFF1] bg-[#F2FAFB]" />
+      <View className="absolute h-[160px] w-[160px] rounded-full border border-[#D7EFF1]" />
+      {!stopped ? (
+        <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate }] }}>
+          <View className="absolute right-[18px] top-[18px] h-8 w-8 items-center justify-center rounded-full bg-white">
+            <Icon name="flight" size={17} color={colors.primaryStrong} style={{ transform: [{ rotate: '45deg' }] }} />
+          </View>
+          <View className="absolute bottom-[30px] left-3 h-3 w-3 rounded-full border-2 border-white bg-[#0891B2]" />
+        </Animated.View>
+      ) : null}
+      <View className="h-[118px] w-[118px] items-center justify-center rounded-full bg-white" style={{ elevation: 4 }}>
+        <Icon name={finished ? 'verified' : 'public'} size={72} color={colors.primary} />
       </View>
     </View>
   );
 }
 
-// ==================== MAIN SCREEN ====================
-
-export default function GeneratingTripScreen({
-  plan,
-  onCancel,
-  onDone,
-}: GeneratingTripScreenProps) {
-  const { destinationId, days } = plan;
-  const destination =
-    planDestinations.find((item) => item.id === destinationId) ?? planDestinations[0];
-
-  const [elapsed, setElapsed] = useState(0);
-  const progressBar = useRef(new Animated.Value(0)).current;
-
-  // Dữ liệu thật từ Backend: tạo Travel Plan rồi lấy gợi ý AI (RecommendationController).
-  const [planId, setPlanId] = useState<number | null>(null);
+/** Đang chuẩn bị danh sách địa điểm: xác nhận plan + gọi AI gợi ý (giống GeneratingTripPage của web) */
+export default function GeneratingTripScreen({ navigation, route }: RootScreenProps<'GeneratingTrip'>) {
+  const { planId } = route.params;
+  const [plan, setPlan] = useState<TravelPlanResponse | null>(null);
+  const [planLoaded, setPlanLoaded] = useState(false);
+  const [placesLoaded, setPlacesLoaded] = useState(false);
   const [recommendation, setRecommendation] = useState<AiRecommendationResponse | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
-  const dataReady = planId !== null && recommendation !== null;
 
-  // Giả lập tiến trình hiển thị (animation), đồng thời gọi API thật phía dưới.
   useEffect(() => {
+    if (error) return;
     const startedAt = Date.now();
+    setElapsed(0);
     const timer = setInterval(() => {
       const next = Math.min(TOTAL_DURATION, Date.now() - startedAt);
       setElapsed(next);
       if (next >= TOTAL_DURATION) clearInterval(timer);
     }, 100);
-
-    Animated.timing(progressBar, {
-      toValue: 1,
-      duration: TOTAL_DURATION,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
-
     return () => clearInterval(timer);
-  }, [progressBar, retryCount]);
+  }, [retryCount, error]);
 
   useEffect(() => {
     let active = true;
-    setError(null);
-    setPlanId(null);
+    setPlan(null);
+    setPlanLoaded(false);
+    setPlacesLoaded(false);
     setRecommendation(null);
-
-    const run = async () => {
+    setError(null);
+    (async () => {
       try {
-        const input = await tripPlanToCreateInput(plan);
+        const savedPlan = await tripFlowApi.plan(planId);
         if (!active) return;
-        const created = await tripFlowApi.createPlan(input);
-        if (!active) return;
-        setPlanId(created.planId);
-
-        const recommended = await tripFlowApi.recommendedPlaces(created.planId);
+        setPlan(savedPlan);
+        setPlanLoaded(true);
+        const recommended = await tripFlowApi.recommendedPlaces(planId);
         if (!active) return;
         setRecommendation(recommended);
+        setPlacesLoaded(true);
       } catch (caught) {
         if (active) setError(errorMessage(caught));
       }
-    };
-
-    void run();
+    })();
     return () => {
       active = false;
     };
-  }, [retryCount]);
+  }, [planId, retryCount]);
 
-  const ratio = elapsed / TOTAL_DURATION;
-  const animationDone = ratio >= 1;
-  const finished = animationDone && dataReady && !error;
-  const percent = dataReady
-    ? Math.round(Easing.out(Easing.quad)(ratio) * 100)
-    : Math.min(95, Math.round(Easing.out(Easing.quad)(ratio) * 100));
-  const currentStep = Math.min(steps.length, Math.floor(ratio * steps.length));
-  const doneSteps = finished ? steps.length : currentStep;
+  const dataReady = planLoaded && placesLoaded && plan !== null;
+  const finished = dataReady && elapsed >= TOTAL_DURATION;
+  const ratio = Math.min(1, elapsed / TOTAL_DURATION);
+  const percent = finished ? 100 : dataReady ? Math.round(easeOutQuad(ratio) * 100) : Math.min(95, Math.round(easeOutQuad(ratio) * 100));
+  const doneSteps = finished ? 4 : planLoaded ? (placesLoaded ? 3 : 2) : 0;
+  const currentStep = Math.min(doneSteps, STEPS.length - 1);
 
-  const handleCancel = () => {
-    if (finished) {
-      onCancel();
-      return;
-    }
-
-    Alert.alert('Hủy tạo lịch trình?', 'Tiến trình hiện tại sẽ không được lưu.', [
-      { text: 'Tiếp tục tạo', style: 'cancel' },
-      { text: 'Hủy', style: 'destructive', onPress: onCancel },
+  const back = () =>
+    Alert.alert('Quay lại trang chuyến đi?', 'Kế hoạch đã được lưu. Quay lại sẽ không xóa kế hoạch này.', [
+      { text: 'Ở lại', style: 'cancel' },
+      { text: 'Quay lại', onPress: () => navigation.navigate('Tabs', { screen: 'Trips' }) },
     ]);
-  };
-
-  const handleDone = () => {
-    if (!finished || planId === null || !recommendation) return;
-    onDone(planId, recommendation);
-  };
-
-  const retry = () => {
-    setElapsed(0);
-    progressBar.setValue(0);
-    setRetryCount((value) => value + 1);
-  };
 
   return (
-    <SafeAreaView
-      edges={['top', 'bottom']}
-      className="flex-1"
-      style={{ backgroundColor: COLORS.white }}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-
-      <ScrollView
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 20, paddingBottom: 16 }}
-      >
-        <GlobeAnimation finished={finished} />
-
-        {/* ================= TITLE ================= */}
-
-        <View
-          className="mt-2 flex-row items-center self-center rounded-full px-3 py-1"
-          style={{ backgroundColor: COLORS.lightPurple }}
-        >
-          <MaterialCommunityIcons name="compass-outline" size={13} color={COLORS.primaryDark} />
-          <Text className="ml-1 text-[11px] font-semibold" style={{ color: COLORS.primaryDark }}>
-            Hành trình cá nhân hóa
-          </Text>
+    <Screen>
+      <View className="rounded-3xl bg-white px-5 pb-4 pt-6">
+        <Globe finished={finished} stopped={finished || Boolean(error)} />
+        <View className="mt-2 flex-row items-center gap-1 self-center rounded-full bg-[#ECFEFF] px-3 py-1">
+          <Icon name="explore" size={14} color={colors.primaryStrong} />
+          <Text className="text-[11px] font-semibold text-[#0E7490]">Hành trình cá nhân hóa</Text>
         </View>
-
-        <Text
-          className="mt-3 text-center text-[21px] font-extrabold leading-7"
-          style={{ color: COLORS.text }}
-        >
+        <Text className="mt-3 text-center text-[20px] font-extrabold leading-7 text-[#13364A]">
           {error
-            ? 'Chưa thể tạo kế hoạch'
+            ? 'Chưa thể chuẩn bị danh sách địa điểm'
             : finished
-              ? 'Hành trình của bạn đã sẵn sàng!'
+              ? 'Địa điểm cho chuyến đi đã sẵn sàng!'
               : 'Đang chuẩn bị hành trình hoàn hảo...'}
         </Text>
-
-        {error && (
-          <View
-            className="mt-3 rounded-2xl p-3"
-            style={{ borderWidth: 1, borderColor: '#FECACA', backgroundColor: '#FEF2F2' }}
-          >
-            <Text className="text-[12px]" style={{ color: '#B91C1C' }}>
-              {error}
-            </Text>
-            <Pressable
-              onPress={retry}
-              className="mt-2 self-start rounded-full bg-white px-4 py-2"
-            >
-              <Text className="text-[12px] font-bold" style={{ color: COLORS.primaryDark }}>
-                Thử lại
-              </Text>
-            </Pressable>
-          </View>
-        )}
-        <Text
-          className="mt-2 text-center text-[12px] leading-5"
-          style={{ color: COLORS.muted }}
-        >
-          Hệ thống đang đối chiếu dữ liệu điểm đến, thời tiết và khoảng cách di chuyển tại{' '}
-          <Text className="font-bold" style={{ color: COLORS.primary }}>
-            {destination.short}
-          </Text>
-          .
+        <Text className="mt-2 text-center text-[12.5px] leading-5 text-[#72818C]">
+          {plan ? (
+            <>
+              Đang chuẩn bị danh sách địa điểm phù hợp với sở thích của bạn tại{' '}
+              <Text className="font-bold text-[#0891B2]">{plan.destination}</Text>.
+            </>
+          ) : (
+            'Đang xác nhận thông tin chuyến đi đã lưu trên hệ thống.'
+          )}
         </Text>
 
-        {/* ================= PROGRESS ================= */}
-
-        <View
-          className="mt-5 rounded-[20px] bg-white p-4"
-          style={{ borderWidth: 1, borderColor: '#ECEFF5' }}
-        >
-          <View className="flex-row items-start">
-            <Text className="flex-1 text-[14px] font-bold" style={{ color: COLORS.text }}>
-              Đang tổng hợp thông tin địa điểm
+        <View className="mt-5 rounded-[20px] border border-[#ECEFF5] p-4">
+          <View className="flex-row items-center gap-2">
+            <Text className="flex-1 text-[14px] font-bold text-[#13364A]">Đang tổng hợp thông tin địa điểm</Text>
+            <Text className="text-[11px] text-[#72818C]">
+              ({doneSteps}/{STEPS.length})
             </Text>
-            <Text className="ml-2 mt-0.5 text-[11px]" style={{ color: COLORS.muted }}>
-              ({doneSteps}/{steps.length} bước)
-            </Text>
-            <Text className="ml-2 text-[16px] font-extrabold" style={{ color: COLORS.primary }}>
-              {percent}%
-            </Text>
+            <Text className="text-[16px] font-extrabold text-[#0891B2]">{percent}%</Text>
           </View>
-
-          <View
-            className="mt-2.5 h-[7px] overflow-hidden rounded-full"
-            style={{ backgroundColor: '#E3E8EF' }}
-          >
-            <Animated.View
-              className="h-full rounded-full"
-              style={{
-                backgroundColor: COLORS.primaryDark,
-                width: progressBar.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0%', '100%'],
-                }),
-              }}
-            />
+          <View className="mt-2.5 h-2 overflow-hidden rounded-full bg-[#E9EEF5]">
+            <View style={{ width: `${percent}%`, height: '100%', backgroundColor: colors.primary }} />
           </View>
-
-          <View className="mt-3">
-            {steps.map((step, index) => {
-              const status =
-                index < doneSteps ? 'done' : index === currentStep ? 'doing' : 'waiting';
-
+          <View className="mt-3 gap-2">
+            {STEPS.map((step, index) => {
+              const status = index < doneSteps ? 'done' : !error && index === currentStep ? 'doing' : 'waiting';
               return (
                 <View
                   key={step.done}
-                  className="mb-2 flex-row items-center rounded-2xl px-3 py-2.5"
-                  style={{
-                    backgroundColor:
-                      status === 'doing' ? '#E2FAF5' : status === 'done' ? '#F4F6FB' : 'transparent',
-                    borderWidth: status === 'doing' ? 1 : 0,
-                    borderColor: '#9FE3D6',
-                  }}
+                  className={`flex-row items-center gap-2.5 rounded-2xl px-3 py-2.5 ${
+                    status === 'doing' ? 'border border-[#9CDFE6] bg-[#E1F9FB]' : status === 'done' ? 'bg-[#F4F6FB]' : ''
+                  }`}
                 >
-                  {status === 'done' && (
-                    <View
-                      className="h-6 w-6 items-center justify-center rounded-full"
-                      style={{ backgroundColor: COLORS.primaryDark }}
-                    >
-                      <MaterialCommunityIcons name="check" size={15} color="white" />
-                    </View>
-                  )}
-                  {status === 'doing' && (
-                    <View className="h-6 w-6 items-center justify-center">
-                      <ActivityIndicator size="small" color={COLORS.primary} />
-                    </View>
-                  )}
-                  {status === 'waiting' && (
-                    <View
-                      className="h-6 w-6 rounded-full"
-                      style={{ borderWidth: 1.5, borderColor: '#D0D6DE' }}
-                    />
-                  )}
-
-                  <Text
-                    numberOfLines={1}
-                    className={`ml-2.5 flex-1 text-[12px] ${status === 'waiting' ? '' : 'font-semibold'}`}
-                    style={{ color: status === 'waiting' ? '#A7B0B8' : COLORS.text }}
-                  >
+                  <Icon
+                    name={status === 'done' ? 'check-circle' : status === 'doing' ? 'autorenew' : 'radio-button-unchecked'}
+                    size={18}
+                    color={status === 'waiting' ? '#B9C6D0' : colors.primary}
+                  />
+                  <Text className={`flex-1 text-[12.5px] ${status === 'waiting' ? 'text-[#9AA9B3]' : 'font-semibold text-[#13364A]'}`}>
                     {status === 'done' ? step.done : step.doing}
-                  </Text>
-
-                  <Text
-                    className="ml-2 text-[11px] font-semibold"
-                    style={{
-                      color:
-                        status === 'done' ? COLORS.primaryDark : status === 'doing' ? COLORS.primary : '#A7B0B8',
-                    }}
-                  >
-                    {status === 'done' ? 'Xong' : status === 'doing' ? '•••' : 'Chờ'}
                   </Text>
                 </View>
               );
@@ -396,85 +173,26 @@ export default function GeneratingTripScreen({
           </View>
         </View>
 
-        {/* ================= PREVIEW ================= */}
-
-        <View
-          className="mt-4 flex-row items-center rounded-[18px] bg-white p-2.5"
-          style={{ borderWidth: 1, borderColor: '#ECEFF5' }}
-        >
-          <Image source={{ uri: destination.image }} className="h-16 w-20 rounded-xl" />
-          <View className="ml-3 min-w-0 flex-1">
-            <View className="flex-row items-center">
-              <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: COLORS.lightPurple }}>
-                <Text className="text-[10px] font-semibold" style={{ color: '#445577' }}>
-                  Hành trình {days}N{Math.max(days - 1, 0)}Đ
-                </Text>
-              </View>
-              <Text className="ml-1.5 text-[10px]" style={{ color: COLORS.muted }}>
-                • {destination.region}
-              </Text>
-            </View>
-            <Text
-              numberOfLines={1}
-              className="mt-1 text-[14px] font-extrabold"
-              style={{ color: COLORS.text }}
-            >
-              {destination.previewTitle}
-            </Text>
-            <Text numberOfLines={1} className="text-[11px]" style={{ color: COLORS.muted }}>
-              {destination.previewSubtitle}
-            </Text>
+        {error ? (
+          <View className="mt-4">
+            <Notice tone="danger">{error}</Notice>
           </View>
+        ) : null}
+
+        <View className="mt-5 gap-2.5">
+          {error ? (
+            <Button title="Thử lại" icon="refresh" onPress={() => setRetryCount((n) => n + 1)} />
+          ) : (
+            <Button
+              title={finished ? `Xem ${recommendation?.items.length ?? 0} địa điểm gợi ý` : 'Đang chuẩn bị...'}
+              iconRight={finished ? 'arrow-forward' : undefined}
+              disabled={!finished}
+              onPress={() => navigation.replace('Suggestions', { planId, recommendation: recommendation ?? undefined })}
+            />
+          )}
+          <Button title="Quay lại chuyến đi" variant="ghost" onPress={back} />
         </View>
-
-        {/* ================= TIP ================= */}
-
-        <View className="mt-4 flex-row rounded-[18px] p-4" style={{ backgroundColor: '#FFF4EC' }}>
-          <View
-            className="h-8 w-8 items-center justify-center rounded-full"
-            style={{ backgroundColor: '#FFE3CC' }}
-          >
-            <MaterialCommunityIcons name="weather-sunset" size={18} color="#C25E00" />
-          </View>
-          <View className="ml-3 flex-1">
-            <Text className="text-[13px] font-bold" style={{ color: '#A14F00' }}>
-              Mẹo nhỏ khi du lịch {destination.tipPlace}
-            </Text>
-            <Text className="mt-1 text-[12px] leading-5" style={{ color: '#5E4636' }}>
-              {destination.tip}
-            </Text>
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* ================= FOOTER ================= */}
-
-      <View className="px-5 pb-3 pt-2">
-        <Pressable
-          onPress={handleDone}
-          disabled={!finished}
-          className="h-12 flex-row items-center justify-center rounded-full active:opacity-80"
-          style={{ backgroundColor: finished ? COLORS.primaryDark : COLORS.lightPurple }}
-        >
-          <MaterialCommunityIcons
-            name={finished ? 'map-search-outline' : 'clock-outline'}
-            size={18}
-            color={finished ? 'white' : COLORS.primaryDark}
-          />
-          <Text
-            className="ml-2 text-[14px] font-bold"
-            style={{ color: finished ? 'white' : COLORS.primaryDark }}
-          >
-            {finished ? 'Xem địa điểm gợi ý' : 'Đang hoàn tất các bước cuối...'}
-          </Text>
-        </Pressable>
-
-        <Pressable onPress={handleCancel} className="items-center py-3" hitSlop={6}>
-          <Text className="text-[12px]" style={{ color: COLORS.muted }}>
-            {finished ? 'Quay lại chỉnh sửa' : 'Hủy tạo lịch trình'}
-          </Text>
-        </Pressable>
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
