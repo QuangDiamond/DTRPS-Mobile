@@ -14,7 +14,7 @@ import {
 import PlacesMap, { hasCoordinate, type PlacesMapHandle } from '../../components/PlacesMap';
 import type { RootScreenProps } from '../../navigation/types';
 import { colors, shadow } from '../../theme';
-import { Chip, Cover, FlowProgress } from '../../ui/Bits';
+import { Chip, Cover, FlowProgress, remoteImageSource } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
@@ -22,10 +22,15 @@ import { EmptyState, ErrorState, Loading, Notice } from '../../ui/States';
 import { countDays, formatMoney } from '../../utils/format';
 
 /** Màu huy hiệu độ phù hợp: ≥75 rất phù hợp, ≥55 phù hợp, còn lại có thể bạn thích */
-export const matchColor = (percent: number) => (percent >= 75 ? '#087A78' : percent >= 55 ? '#2E8B57' : '#6B7C89');
+export const matchColor = (percent: number) =>
+  percent >= 75 ? '#087A78' : percent >= 55 ? '#2E8B57' : '#6B7C89';
 
 const priceLabel = (place: TripPlace) =>
-  place.estimatedCost === null ? 'Chưa có giá tham khảo' : place.estimatedCost === 0 ? 'Miễn phí' : formatMoney(place.estimatedCost, place.currency ?? 'VND');
+  place.estimatedCost === null
+    ? 'Chưa có giá tham khảo'
+    : place.estimatedCost === 0
+      ? 'Miễn phí'
+      : formatMoney(place.estimatedCost, place.currency ?? 'VND');
 
 function SuggestionCard({
   place,
@@ -43,20 +48,31 @@ function SuggestionCard({
   const [showWhy, setShowWhy] = useState(false);
   const hasWhy = (place.aiReasons?.length ?? 0) > 0 || (place.aiCautions?.length ?? 0) > 0;
   return (
-    <View style={shadow.card} className="overflow-hidden rounded-[20px] border border-[#E7EBEF] bg-white">
+    <View
+      style={shadow.card}
+      className="overflow-hidden rounded-[20px] border border-[#E7EBEF] bg-white"
+    >
       <Pressable onPress={onOpen}>
-        <Cover uri={place.imageUrl} height={150} />
-        <View className="absolute bottom-2 left-2 max-w-[70%] rounded-full bg-white/95 px-2.5 py-1">
-          <Text numberOfLines={1} className="text-[10.5px] font-bold text-[#075C66]">
-            {place.categoryName ?? 'Địa điểm du lịch'}
-          </Text>
-        </View>
-        {place.aiMatchPercent !== undefined ? (
-          <View style={{ backgroundColor: matchColor(place.aiMatchPercent) }} className="absolute right-2 top-2 flex-row items-center gap-1 rounded-full px-2.5 py-1">
-            <Icon name="auto-awesome" size={13} color="#FFFFFF" />
-            <Text className="text-[11px] font-extrabold text-white">{place.aiMatchPercent}% phù hợp</Text>
+        {/* Bọc ảnh + badge trong khung relative riêng để badge loại hình nằm trên ảnh, không đè lên giá */}
+        <View className="relative">
+          <Cover uri={place.imageUrl} height={150} />
+          <View className="absolute bottom-2 left-2 max-w-[70%] rounded-full bg-white/95 px-2.5 py-1">
+            <Text numberOfLines={1} className="text-[10.5px] font-bold text-[#075C66]">
+              {place.categoryName ?? 'Địa điểm du lịch'}
+            </Text>
           </View>
-        ) : null}
+          {place.aiMatchPercent !== undefined ? (
+            <View
+              style={{ backgroundColor: matchColor(place.aiMatchPercent) }}
+              className="absolute right-2 top-2 flex-row items-center gap-1 rounded-full px-2.5 py-1"
+            >
+              <Icon name="auto-awesome" size={13} color="#FFFFFF" />
+              <Text className="text-[11px] font-extrabold text-white">
+                {place.aiMatchPercent}% phù hợp
+              </Text>
+            </View>
+          ) : null}
+        </View>
         <View className="px-3.5 pb-2 pt-3">
           <Text numberOfLines={2} className="text-[14.5px] font-extrabold leading-5 text-[#13364A]">
             {place.name}
@@ -70,7 +86,9 @@ function SuggestionCard({
           <View className="mt-2 flex-row items-center justify-between">
             <Text className="text-[12.5px] font-extrabold text-[#087A78]">{priceLabel(place)}</Text>
             <Text className="text-[10.5px] text-[#8C9AA3]">
-              {place.aiRank !== undefined ? `${place.aiMatchLabel ?? 'Gợi ý'} · Xếp hạng #${place.aiRank}` : 'Địa điểm đã chọn'}
+              {place.aiRank !== undefined
+                ? `${place.aiMatchLabel ?? 'Gợi ý'} · Xếp hạng #${place.aiRank}`
+                : 'Địa điểm đã chọn'}
             </Text>
           </View>
         </View>
@@ -99,7 +117,9 @@ function SuggestionCard({
               {place.aiCautions?.map((caution) => (
                 <View key={caution} className="flex-row items-start gap-1.5">
                   <Icon name="warning" size={14} color="#D97706" style={{ marginTop: 2 }} />
-                  <Text className="flex-1 text-[12px] leading-[18px] text-[#92400E]">{caution}</Text>
+                  <Text className="flex-1 text-[12px] leading-[18px] text-[#92400E]">
+                    {caution}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -114,8 +134,15 @@ function SuggestionCard({
           style={{ backgroundColor: selected ? '#DAF5EA' : '#075C66', opacity: busy ? 0.6 : 1 }}
           className="h-10 flex-row items-center justify-center gap-1.5 rounded-xl"
         >
-          <Icon name={selected ? 'check-circle' : 'add'} size={18} color={selected ? '#075C66' : '#FFFFFF'} />
-          <Text style={{ color: selected ? '#075C66' : '#FFFFFF' }} className="text-[12px] font-extrabold">
+          <Icon
+            name={selected ? 'check-circle' : 'add'}
+            size={18}
+            color={selected ? '#075C66' : '#FFFFFF'}
+          />
+          <Text
+            style={{ color: selected ? '#075C66' : '#FFFFFF' }}
+            className="text-[12px] font-extrabold"
+          >
             {selected ? 'Đã chọn · Bỏ chọn' : 'Thêm vào kế hoạch'}
           </Text>
         </Pressable>
@@ -139,13 +166,24 @@ function PartnerCard({
   onToggle: () => void;
 }) {
   return (
-    <View style={shadow.card} className="w-[270px] rounded-2xl border border-[#E7EBEF] bg-white p-2.5">
+    <View
+      style={shadow.card}
+      className="w-[270px] rounded-2xl border border-[#E7EBEF] bg-white p-2.5"
+    >
       <Pressable onPress={onOpen} className="flex-row gap-2.5">
         <View className="h-[72px] w-[72px] overflow-hidden rounded-xl bg-[#DCEFEB]">
-          {place.coverUrl ? <Image source={{ uri: place.coverUrl }} style={{ width: '100%', height: '100%' }} /> : null}
+          {place.coverUrl ? (
+            <Image
+              source={remoteImageSource(place.coverUrl)}
+              style={{ width: '100%', height: '100%' }}
+            />
+          ) : null}
         </View>
         <View className="min-w-0 flex-1">
-          <Text numberOfLines={2} className="text-[13px] font-extrabold leading-[17px] text-[#13364A]">
+          <Text
+            numberOfLines={2}
+            className="text-[13px] font-extrabold leading-[17px] text-[#13364A]"
+          >
             {place.name}
           </Text>
           {place.verified ? (
@@ -160,7 +198,9 @@ function PartnerCard({
           <View className="mt-0.5 flex-row items-center gap-1">
             <Icon name="star" size={13} color="#E0A100" />
             <Text className="text-[11px] text-[#72818C]">
-              {place.rating !== null ? `${place.rating} (${place.reviewCount} đánh giá)` : 'Chưa có đánh giá'}
+              {place.rating !== null
+                ? `${place.rating} (${place.reviewCount} đánh giá)`
+                : 'Chưa có đánh giá'}
             </Text>
           </View>
         </View>
@@ -171,8 +211,15 @@ function PartnerCard({
         style={{ backgroundColor: selected ? '#DAF5EA' : '#075C66', opacity: busy ? 0.6 : 1 }}
         className="mt-2 h-9 flex-row items-center justify-center gap-1.5 rounded-xl"
       >
-        <Icon name={selected ? 'check-circle' : 'add'} size={17} color={selected ? '#075C66' : '#FFFFFF'} />
-        <Text style={{ color: selected ? '#075C66' : '#FFFFFF' }} className="text-[11.5px] font-extrabold">
+        <Icon
+          name={selected ? 'check-circle' : 'add'}
+          size={17}
+          color={selected ? '#075C66' : '#FFFFFF'}
+        />
+        <Text
+          style={{ color: selected ? '#075C66' : '#FFFFFF' }}
+          className="text-[11.5px] font-extrabold"
+        >
           {selected ? 'Đã chọn · Bỏ chọn' : 'Thêm vào kế hoạch'}
         </Text>
       </Pressable>
@@ -181,7 +228,10 @@ function PartnerCard({
 }
 
 /** Gợi ý địa điểm cho chuyến đi (bước 3) — giống SuggestedPlacesPage của web */
-export default function SuggestedPlacesScreen({ navigation, route }: RootScreenProps<'Suggestions'>) {
+export default function SuggestedPlacesScreen({
+  navigation,
+  route,
+}: RootScreenProps<'Suggestions'>) {
   const { planId } = route.params;
   const mapRef = useRef<PlacesMapHandle>(null);
   const [plan, setPlan] = useState<TravelPlanResponse | null>(null);
@@ -202,7 +252,10 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
     let active = true;
     setLoading(true);
     setError(null);
-    const preloaded = retryCount === 0 && route.params.recommendation?.planId === planId ? route.params.recommendation : null;
+    const preloaded =
+      retryCount === 0 && route.params.recommendation?.planId === planId
+        ? route.params.recommendation
+        : null;
     Promise.all([
       tripFlowApi.plan(planId),
       preloaded ? Promise.resolve(preloaded) : tripFlowApi.recommendedPlaces(planId),
@@ -212,7 +265,9 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
       .then(([savedPlan, recommended, selected, groups]) => {
         if (!active) return;
         const categoryNames = new Map(
-          groups.flatMap((group) => [group, ...group.subtypes]).map((item) => [item.code, item.name] as const),
+          groups
+            .flatMap((group) => [group, ...group.subtypes])
+            .map((item) => [item.code, item.name] as const),
         );
         const aiPlaces = recommended.items.map((item) => ({
           ...toAiTripPlace(item, savedPlan.destination),
@@ -254,13 +309,22 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
     const grouped = new Map<string, { label: string; count: number }>();
     for (const place of places) {
       const key = place.categoryCode ?? 'uncategorized';
-      grouped.set(key, { label: place.categoryName ?? 'Khác', count: (grouped.get(key)?.count ?? 0) + 1 });
+      grouped.set(key, {
+        label: place.categoryName ?? 'Khác',
+        count: (grouped.get(key)?.count ?? 0) + 1,
+      });
     }
-    return [{ id: 'all', label: 'Tất cả', count: places.length }, ...Array.from(grouped, ([id, value]) => ({ id, ...value }))];
+    return [
+      { id: 'all', label: 'Tất cả', count: places.length },
+      ...Array.from(grouped, ([id, value]) => ({ id, ...value })),
+    ];
   }, [places]);
 
   const visiblePlaces = useMemo(
-    () => (category === 'all' ? places : places.filter((place) => (place.categoryCode ?? 'uncategorized') === category)),
+    () =>
+      category === 'all'
+        ? places
+        : places.filter((place) => (place.categoryCode ?? 'uncategorized') === category),
     [places, category],
   );
 
@@ -300,13 +364,18 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
     }
   };
 
-  const openDetail = (placeId: number) => navigation.navigate('SuggestionDetail', { planId, placeId });
+  const openDetail = (placeId: number) =>
+    navigation.navigate('SuggestionDetail', { planId, placeId });
 
   const header = (
     <View className="bg-white">
       <Header
         title="Địa điểm cho chuyến đi"
-        subtitle={plan ? `${plan.destination} • ${countDays(plan.startDate, plan.endDate)} ngày • ${plan.groupSize} người` : undefined}
+        subtitle={
+          plan
+            ? `${plan.destination} • ${countDays(plan.startDate, plan.endDate)} ngày • ${plan.groupSize} người`
+            : undefined
+        }
         onBack={() => navigation.goBack()}
         right={
           <Pressable
@@ -332,7 +401,10 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
   if (error || !plan) {
     return (
       <Screen header={header}>
-        <ErrorState message={error ?? 'Không tải được kế hoạch.'} onRetry={() => setRetryCount((n) => n + 1)} />
+        <ErrorState
+          message={error ?? 'Không tải được kế hoạch.'}
+          onRetry={() => setRetryCount((n) => n + 1)}
+        />
       </Screen>
     );
   }
@@ -342,7 +414,9 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
       <View className="mb-3 rounded-2xl border border-[#DDEDE7] bg-[#F4FBF8] p-3">
         <View className="flex-row items-center gap-1.5">
           <Icon name="travel-explore" size={18} color="#075C66" />
-          <Text className="text-[13.5px] font-extrabold text-[#13364A]">Địa điểm gợi ý cho chuyến đi</Text>
+          <Text className="text-[13.5px] font-extrabold text-[#13364A]">
+            Địa điểm gợi ý cho chuyến đi
+          </Text>
         </View>
         <Text className="mt-1 text-[11.5px] leading-5 text-[#72818C]">
           {aiSummary?.degraded
@@ -352,7 +426,8 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
         </Text>
         {aiSummary ? (
           <Text className="mt-1 text-[11.5px] font-semibold text-[#557080]">
-            Cần khoảng {aiSummary.needed} điểm · Có {aiSummary.available} ứng viên · SmartTravel gợi ý {aiSummary.items.length} địa điểm
+            Cần khoảng {aiSummary.needed} điểm · Có {aiSummary.available} ứng viên · SmartTravel gợi
+            ý {aiSummary.items.length} địa điểm
           </Text>
         ) : null}
       </View>
@@ -364,10 +439,14 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
 
       {/* Bản đồ */}
       <View className="mb-3 flex-row items-center justify-between">
-        <Text className="text-[13px] font-bold text-[#557080]">{mapPoints.length} địa điểm có tọa độ</Text>
+        <Text className="text-[13px] font-bold text-[#557080]">
+          {mapPoints.length} địa điểm có tọa độ
+        </Text>
         <Pressable onPress={() => setShowMap((v) => !v)} className="flex-row items-center gap-1">
           <Icon name={showMap ? 'map' : 'map'} size={16} color={colors.primary} />
-          <Text className="text-[12.5px] font-bold text-[#0891B2]">{showMap ? 'Ẩn bản đồ' : 'Xem bản đồ'}</Text>
+          <Text className="text-[12.5px] font-bold text-[#0891B2]">
+            {showMap ? 'Ẩn bản đồ' : 'Xem bản đồ'}
+          </Text>
         </Pressable>
       </View>
       {showMap && mapPoints.length > 0 ? (
@@ -381,7 +460,9 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
         <View className="mb-4 rounded-[20px] border border-[#DCE7F7] bg-[#F7FAFF] p-3">
           <View className="flex-row items-center gap-1.5">
             <Icon name="verified" size={18} color={colors.verified} />
-            <Text className="flex-1 text-[13.5px] font-extrabold text-[#13364A]">Đối tác tại {plan.destination}</Text>
+            <Text className="flex-1 text-[13.5px] font-extrabold text-[#13364A]">
+              Đối tác tại {plan.destination}
+            </Text>
             <View className="rounded-full bg-white px-2 py-0.5">
               <Text className="text-[10.5px] font-bold text-[#1F5FBF]">{partners.length}</Text>
             </View>
@@ -389,7 +470,11 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
           <Text className="mb-3 mt-1 text-[11px] leading-4 text-[#72818C]">
             Địa điểm do doanh nghiệp đã được xác minh đăng ký. Không tính vào % phù hợp.
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 2 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 10, paddingBottom: 2 }}
+          >
             {partners.map((partner) => (
               <PartnerCard
                 key={partner.placeId}
@@ -404,9 +489,19 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
         </View>
       ) : null}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
+      >
         {categories.map((item) => (
-          <Chip key={item.id} label={item.label} count={item.count} selected={item.id === category} onPress={() => setCategory(item.id)} />
+          <Chip
+            key={item.id}
+            label={item.label}
+            count={item.count}
+            selected={item.id === category}
+            onPress={() => setCategory(item.id)}
+          />
         ))}
       </ScrollView>
     </View>
@@ -419,7 +514,11 @@ export default function SuggestedPlacesScreen({ navigation, route }: RootScreenP
       footer={
         <View className="border-t border-[#EEF1F5] bg-white px-4 pb-4 pt-3">
           <Button
-            title={selectedIds.size > 0 ? `Xem ${selectedIds.size} địa điểm đã chọn` : 'Chọn địa điểm để tiếp tục'}
+            title={
+              selectedIds.size > 0
+                ? `Xem ${selectedIds.size} địa điểm đã chọn`
+                : 'Chọn địa điểm để tiếp tục'
+            }
             icon="shopping-basket"
             iconRight="arrow-forward"
             disabled={selectedIds.size === 0 || busyPlaceId !== null}

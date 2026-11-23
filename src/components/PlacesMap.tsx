@@ -9,9 +9,12 @@ import {
   type StyleSpecification,
 } from '@maplibre/maplibre-react-native';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { LogBox, View, type StyleProp, type ViewStyle } from 'react-native';
 import { colors } from '../theme';
 import { Text } from '../ui/Typography';
+
+// MapLibre Native tự hủy request tile cũ khi zoom/pan nhanh — chỉ là log thông tin, không phải lỗi
+LogBox.ignoreLogs(['MapLibre Native [WARN]']);
 
 export interface MapPoint {
   id: string;
@@ -61,6 +64,34 @@ const MAP_STYLE: string | StyleSpecification = GOONG_MAPTILES_KEY
   ? `https://tiles.goong.io/assets/goong_map_web.json?api_key=${GOONG_MAPTILES_KEY}`
   : FALLBACK_STYLE;
 
+/** Style ảnh vệ tinh chính thức của Goong (kèm tên đường Việt Nam), dự phòng Esri nếu thiếu key */
+const SATELLITE_STYLE: string | StyleSpecification = GOONG_MAPTILES_KEY
+  ? `https://tiles.goong.io/assets/goong_satellite.json?api_key=${GOONG_MAPTILES_KEY}`
+  : {
+      version: 8,
+      sources: {
+        'esri-satellite': {
+          type: 'raster',
+          tiles: [
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+          attribution: '© Esri World Imagery',
+        },
+        'esri-labels': {
+          type: 'raster',
+          tiles: [
+            'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+          ],
+          tileSize: 256,
+        },
+      },
+      layers: [
+        { id: 'esri-satellite', type: 'raster', source: 'esri-satellite' },
+        { id: 'esri-labels', type: 'raster', source: 'esri-labels' },
+      ],
+    };
+
 export const hasCoordinate = <T extends { latitude: number | null; longitude: number | null }>(
   item: T,
 ): item is T & { latitude: number; longitude: number } =>
@@ -72,7 +103,8 @@ export const hasCoordinate = <T extends { latitude: number | null; longitude: nu
   Math.abs(item.longitude) <= 180;
 
 /** Khoảng độ (delta) → mức zoom tương ứng */
-const zoomFor = (delta: number) => Math.min(18, Math.max(3, Math.log2(360 / Math.max(delta, 0.0005))));
+const zoomFor = (delta: number) =>
+  Math.min(18, Math.max(3, Math.log2(360 / Math.max(delta, 0.0005))));
 
 /**
  * Bản đồ các địa điểm có ghim đánh số — bản mobile của TravelMap trên web: MapLibre + nền Goong,
@@ -85,17 +117,49 @@ const PlacesMap = forwardRef<
     activeId?: string | null;
     onSelect?: (id: string) => void;
     route?: LatLng[];
+    /** Tuyến chính vẽ mờ phía sau khi đang rẽ tạm (vd. ghé cây xăng) */
+    secondaryRoute?: LatLng[];
+    /** Màu tuyến đang dẫn đường (mặc định xanh chủ đạo) */
+    routeColor?: string;
     userLocation?: LatLng | null;
     style?: StyleProp<ViewStyle>;
     followUser?: boolean;
+    /** Bật chế độ ảnh vệ tinh (Satellite) */
+    satellite?: boolean;
+    /** Khoảng đệm đáy khi fitBounds để tuyến không bị thanh dưới che mất */
+    fitBottomPadding?: number;
+    /** Gọi khi người dùng tự kéo/zoom bản đồ */
+    onUserInteract?: () => void;
   }
->(function PlacesMap({ points, activeId, onSelect, route, userLocation, style, followUser }, ref) {
+>(function PlacesMap(
+  {
+    points,
+    activeId,
+    onSelect,
+    route,
+    secondaryRoute,
+    routeColor,
+    userLocation,
+    style,
+    followUser,
+    satellite,
+    fitBottomPadding = 60,
+    onUserInteract,
+  },
+  ref,
+) {
   const cameraRef = useRef<CameraRef>(null);
 
   const coordinates = useMemo(() => {
+    // Khi đã có tuyến đường thì ưu tiên căn khung nhìn theo đúng tuyến đang đi (+ vị trí GPS),
+    // tránh bị các ghim khác ở xa (vd. điểm chính cách 200km khi đang rẽ cây xăng) kéo zoom ra ngoài.
+    if (route && route.length > 1) {
+      const list: LngLat[] = route.map((p): LngLat => [p.longitude, p.latitude]);
+      if (userLocation) list.push([userLocation.longitude, userLocation.latitude]);
+      return list;
+    }
     const list: LngLat[] = points.map((p) => [p.longitude, p.latitude]);
     if (userLocation) list.push([userLocation.longitude, userLocation.latitude]);
-    if (route) list.push(...route.map((p): LngLat => [p.longitude, p.latitude]));
     return list;
   }, [points, userLocation, route]);
 
@@ -109,14 +173,18 @@ const PlacesMap = forwardRef<
     const lngs = coordinates.map((c) => c[0]);
     const lats = coordinates.map((c) => c[1]);
     camera.fitBounds([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)], {
-      padding: { top: 60, right: 50, bottom: 60, left: 50 },
+      padding: { top: 70, right: 55, bottom: fitBottomPadding, left: 55 },
       duration: 350,
     });
   };
 
   useImperativeHandle(ref, () => ({
     focus: (latitude, longitude, zoomDelta = 0.02) =>
-      cameraRef.current?.easeTo({ center: [longitude, latitude], zoom: zoomFor(zoomDelta), duration: 350 }),
+      cameraRef.current?.easeTo({
+        center: [longitude, latitude],
+        zoom: zoomFor(zoomDelta),
+        duration: 350,
+      }),
     fitAll,
   }));
 
@@ -128,88 +196,136 @@ const PlacesMap = forwardRef<
     return () => clearTimeout(timer);
   }, [signature]);
 
+  const secondaryRouteShape = useMemo<GeoJSON.Feature | null>(
+    () =>
+      secondaryRoute && secondaryRoute.length > 1
+        ? {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: secondaryRoute.map((p) => [p.longitude, p.latitude]),
+            },
+          }
+        : null,
+    [secondaryRoute],
+  );
+
   const routeShape = useMemo<GeoJSON.Feature | null>(
     () =>
       route && route.length > 1
         ? {
             type: 'Feature',
             properties: {},
-            geometry: { type: 'LineString', coordinates: route.map((p) => [p.longitude, p.latitude]) },
+            geometry: {
+              type: 'LineString',
+              coordinates: route.map((p) => [p.longitude, p.latitude]),
+            },
           }
         : null,
     [route],
   );
 
   return (
-    <Map
+    <View
       style={[{ flex: 1 }, style]}
-      mapStyle={MAP_STYLE}
-      logo={false}
-      attribution={false}
-      compass={false}
-      onDidFinishLoadingMap={fitAll}
+      onTouchMove={() => {
+        if (followUser) onUserInteract?.();
+      }}
     >
-      <Camera
-        ref={cameraRef}
-        initialViewState={{ center: coordinates[0] ?? VIETNAM_CENTER, zoom: coordinates[0] ? 12 : 4.5 }}
-      />
+      <Map
+        style={{ flex: 1 }}
+        mapStyle={satellite ? SATELLITE_STYLE : MAP_STYLE}
+        logo={false}
+        attribution={false}
+        compass={false}
+        onDidFinishLoadingMap={fitAll}
+      >
+        <Camera
+          ref={cameraRef}
+          initialViewState={{
+            center: coordinates[0] ?? VIETNAM_CENTER,
+            zoom: coordinates[0] ? 12 : 4.5,
+          }}
+        />
 
-      {routeShape ? (
-        <GeoJSONSource id="route" data={routeShape}>
-          <Layer
-            id="route-line"
-            type="line"
-            style={{ lineColor: colors.primary, lineWidth: 5, lineCap: 'round', lineJoin: 'round' }}
-          />
-        </GeoJSONSource>
-      ) : null}
+        {secondaryRouteShape ? (
+          <GeoJSONSource id="secondary-route" data={secondaryRouteShape}>
+            <Layer
+              id="secondary-route-line"
+              type="line"
+              paint={{ 'line-color': '#94A3B8', 'line-width': 4, 'line-opacity': 0.55 }}
+              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            />
+          </GeoJSONSource>
+        ) : null}
 
-      {points.map((point) => {
-        const active = point.id === activeId;
-        return (
-          <Marker
-            key={point.id}
-            id={point.id}
-            lngLat={[point.longitude, point.latitude]}
-            anchor="center"
-            onPress={() => onSelect?.(point.id)}
-          >
-            <View
-              accessibilityLabel={point.title}
-              style={{
-                minWidth: active ? 34 : 28,
-                height: active ? 34 : 28,
-                borderRadius: 17,
-                paddingHorizontal: 4,
-                backgroundColor: active ? colors.ink : (point.color ?? colors.primary),
-                borderWidth: 2.5,
-                borderColor: '#FFFFFF',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+        {routeShape ? (
+          <GeoJSONSource id="route" data={routeShape}>
+            <Layer
+              id="route-casing"
+              type="line"
+              paint={{ 'line-color': '#FFFFFF', 'line-width': 8, 'line-opacity': 0.9 }}
+              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            />
+            <Layer
+              id="route-line"
+              type="line"
+              paint={{ 'line-color': routeColor ?? colors.primary, 'line-width': 5 }}
+              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            />
+          </GeoJSONSource>
+        ) : null}
+
+        {points.map((point) => {
+          const active = point.id === activeId;
+          return (
+            <Marker
+              key={point.id}
+              id={point.id}
+              lngLat={[point.longitude, point.latitude]}
+              anchor="center"
+              onPress={() => onSelect?.(point.id)}
             >
-              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>{point.label ?? '•'}</Text>
-            </View>
-          </Marker>
-        );
-      })}
+              <View
+                accessibilityLabel={point.title}
+                style={{
+                  minWidth: active ? 34 : 28,
+                  height: active ? 34 : 28,
+                  borderRadius: 17,
+                  paddingHorizontal: 4,
+                  backgroundColor: active ? colors.ink : (point.color ?? colors.primary),
+                  borderWidth: 2.5,
+                  borderColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+                  {point.label ?? '•'}
+                </Text>
+              </View>
+            </Marker>
+          );
+        })}
 
-      {userLocation ? (
-        <Marker id="me" lngLat={[userLocation.longitude, userLocation.latitude]} anchor="center">
-          <View
-            accessibilityLabel="Vị trí của bạn"
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              backgroundColor: '#2563EB',
-              borderWidth: 3,
-              borderColor: '#FFFFFF',
-            }}
-          />
-        </Marker>
-      ) : null}
-    </Map>
+        {userLocation ? (
+          <Marker id="me" lngLat={[userLocation.longitude, userLocation.latitude]} anchor="center">
+            <View
+              accessibilityLabel="Vị trí của bạn"
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 10,
+                backgroundColor: '#2563EB',
+                borderWidth: 3,
+                borderColor: '#FFFFFF',
+              }}
+            />
+          </Marker>
+        ) : null}
+      </Map>
+    </View>
   );
 });
 

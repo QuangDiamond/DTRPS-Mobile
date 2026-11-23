@@ -14,7 +14,7 @@ import ReviewForm from '../../components/ReviewForm';
 import TodayWeatherCard from '../../components/TodayWeatherCard';
 import type { RootScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
-import { Avatar, Badge, Stars } from '../../ui/Bits';
+import { Avatar, Badge, remoteImageSource, Stars } from '../../ui/Bits';
 import { Button, IconButton } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
@@ -308,7 +308,7 @@ export default function PlaceDetailScreen({ navigation, route }: RootScreenProps
           >
             {images.map((url, idx) => (
               <Pressable key={url} onPress={() => setViewer({ images, index: idx })}>
-                <Image source={{ uri: url }} style={{ width: imageWidth, height: 250 }} />
+                <Image source={remoteImageSource(url)} style={{ width: imageWidth, height: 250 }} />
               </Pressable>
             ))}
           </ScrollView>

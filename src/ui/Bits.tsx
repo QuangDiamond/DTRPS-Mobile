@@ -1,5 +1,13 @@
 import type { ReactNode } from 'react';
-import { Image, Modal, Pressable, ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { Text } from './Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, shadow } from '../theme';
@@ -14,7 +22,12 @@ export function Card({
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
 }) {
-  const base: ViewStyle = { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 16, ...shadow.card };
+  const base: ViewStyle = {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    ...shadow.card,
+  };
   if (onPress) {
     // Không dùng style dạng hàm của Pressable (NativeWind bỏ qua)
     return (
@@ -57,7 +70,9 @@ export function Chip({
         backgroundColor: selected ? colors.primary : '#FFFFFF',
       }}
     >
-      {icon ? <Icon name={icon} size={16} color={selected ? '#FFFFFF' : colors.primaryStrong} /> : null}
+      {icon ? (
+        <Icon name={icon} size={16} color={selected ? '#FFFFFF' : colors.primaryStrong} />
+      ) : null}
       <Text style={{ fontSize: 12.5, fontWeight: '700', color: selected ? '#FFFFFF' : colors.ink }}>
         {label}
         {count !== undefined ? ` (${count})` : ''}
@@ -107,7 +122,12 @@ export function Stars({
           value >= star ? 'star' : value >= star - 0.5 ? 'star-half' : 'star-border';
         const icon = <Icon name={name} size={size} color="#E0A100" />;
         return onChange ? (
-          <Pressable key={star} onPress={() => onChange(star)} accessibilityLabel={`${star} sao`} hitSlop={4}>
+          <Pressable
+            key={star}
+            onPress={() => onChange(star)}
+            accessibilityLabel={`${star} sao`}
+            hitSlop={4}
+          >
             {icon}
           </Pressable>
         ) : (
@@ -118,7 +138,15 @@ export function Stars({
   );
 }
 
-export function Avatar({ name, url, size = 44 }: { name?: string | null; url?: string | null; size?: number }) {
+export function Avatar({
+  name,
+  url,
+  size = 44,
+}: {
+  name?: string | null;
+  url?: string | null;
+  size?: number;
+}) {
   const initials = (name ?? '?')
     .trim()
     .split(/\s+/)
@@ -151,6 +179,12 @@ export function Avatar({ name, url, size = 44 }: { name?: string | null; url?: s
   );
 }
 
+/** Header User-Agent giúp Android OkHttp tải được ảnh từ các nguồn chặn bot như Wikimedia */
+export const remoteImageSource = (uri: string) => ({
+  uri,
+  headers: { 'User-Agent': 'SmartTravelApp/1.0 (https://smarttravel.vn)' },
+});
+
 /** Ảnh có khung chờ khi không có ảnh */
 export function Cover({
   uri,
@@ -173,7 +207,11 @@ export function Cover({
       ]}
     >
       {uri ? (
-        <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+        <Image
+          source={remoteImageSource(uri)}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="cover"
+        />
       ) : (
         <View className="flex-1 items-center justify-center">
           <Icon name={icon} size={Math.min(44, height / 3)} color="#7CC3D2" />

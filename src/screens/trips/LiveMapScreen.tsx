@@ -21,6 +21,7 @@ import { Icon } from '../../ui/Icon';
 import { ErrorState, Loading, Notice } from '../../ui/States';
 import { Toast, useToast } from '../../ui/Toast';
 import { formatTime } from '../../utils/format';
+import { setNavigationLockScreen } from '../../utils/lockScreen';
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -63,11 +64,14 @@ function distanceMeters(a: LatLng, b: LatLng): number {
   const toRad = (v: number) => (v * Math.PI) / 180;
   const dLat = toRad(b.latitude - a.latitude);
   const dLng = toRad(b.longitude - a.longitude);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-const formatDistance = (meters: number) => (meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`);
+const formatDistance = (meters: number) =>
+  meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
 const formatDurationSeconds = (seconds: number) => {
   const minutes = Math.round(seconds / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút` : `${minutes} phút`;
@@ -78,6 +82,12 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const { planId, day: dayNumber } = navRoute.params;
   const mapRef = useRef<PlacesMapHandle>(null);
   const insets = useSafeAreaInsets();
+
+  // Giữ sáng & hiển thị trên màn hình khóa khi đang mở màn hình dẫn đường chuyến đi
+  useEffect(() => {
+    setNavigationLockScreen(true);
+    return () => setNavigationLockScreen(false);
+  }, []);
   const [toast, showToast] = useToast();
   const [overview, setOverview] = useState<ItineraryOverview | null>(null);
   const [progress, setProgress] = useState<TripProgressResponse | null>(null);
@@ -94,7 +104,12 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const [routeError, setRouteError] = useState<string | null>(null);
   const [rerouteVersion, setRerouteVersion] = useState(0);
   const [reviewPlace, setReviewPlace] = useState<{ placeId: number; name: string } | null>(null);
-  const lastRequest = useRef<{ itemId: number; location: LatLng; vehicle: GoongVehicle; time: number } | null>(null);
+  const lastRequest = useRef<{
+    itemId: number;
+    location: LatLng;
+    vehicle: GoongVehicle;
+    time: number;
+  } | null>(null);
   const sequence = useRef(0);
 
   useEffect(() => {
@@ -146,8 +161,14 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const progressDay = progress?.days.find((entry) => entry.dayNumber === dayNumber);
   const dayStatus = progressDay?.status ?? 'NOT_STARTED';
   const isRunning = dayStatus === 'IN_PROGRESS';
-  const stops = useMemo(() => [...(currentDay?.activities ?? [])].sort((a, b) => a.itemOrder - b.itemOrder), [currentDay]);
-  const statuses = useMemo(() => new Map((progressDay?.activities ?? []).map((item) => [item.itemId, item.status])), [progressDay]);
+  const stops = useMemo(
+    () => [...(currentDay?.activities ?? [])].sort((a, b) => a.itemOrder - b.itemOrder),
+    [currentDay],
+  );
+  const statuses = useMemo(
+    () => new Map((progressDay?.activities ?? []).map((item) => [item.itemId, item.status])),
+    [progressDay],
+  );
   const statusOf = (itemId: number) => statuses.get(itemId) ?? 'PENDING';
   const pendingStop = stops.find((item) => statusOf(item.itemId) === 'PENDING') ?? null;
   const completedCount = stops.filter((item) => statusOf(item.itemId) !== 'PENDING').length;
@@ -174,7 +195,14 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
     setRouteLoading(true);
     setRouteError(null);
     tripFlowApi
-      .nextTripRoute(planId, dayNumber, location.latitude, location.longitude, vehicle, location.accuracy ?? undefined)
+      .nextTripRoute(
+        planId,
+        dayNumber,
+        location.latitude,
+        location.longitude,
+        vehicle,
+        location.accuracy ?? undefined,
+      )
       .then((response) => {
         if (sequence.current === requestId) setRoute(response);
       })
@@ -188,14 +216,22 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
       });
   }, [isRunning, pendingStop?.itemId, location, vehicle, planId, dayNumber, rerouteVersion]);
 
-  const polyline = useMemo(() => (route?.route.polyline ? decodePolyline(route.route.polyline) : []), [route]);
+  const polyline = useMemo(
+    () => (route?.route.polyline ? decodePolyline(route.route.polyline) : []),
+    [route],
+  );
   const mapPoints = stops.filter(hasCoordinate).map((item) => ({
     id: String(item.itemId),
     latitude: item.latitude,
     longitude: item.longitude,
     label: String(item.itemOrder),
     title: item.placeName,
-    color: statusOf(item.itemId) === 'COMPLETED' ? colors.success : statusOf(item.itemId) === 'SKIPPED' ? '#9AA9B3' : undefined,
+    color:
+      statusOf(item.itemId) === 'COMPLETED'
+        ? colors.success
+        : statusOf(item.itemId) === 'SKIPPED'
+          ? '#9AA9B3'
+          : undefined,
   }));
 
   const startDay = async () => {
@@ -219,7 +255,11 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
       setProgress(await tripFlowApi.updateTripActivity(planId, dayNumber, stop.itemId, status));
       setRoute(null);
       lastRequest.current = null;
-      showToast(status === 'COMPLETED' ? `Đã hoàn thành: ${stop.placeName}` : `Đã bỏ qua: ${stop.placeName}`);
+      showToast(
+        status === 'COMPLETED'
+          ? `Đã hoàn thành: ${stop.placeName}`
+          : `Đã bỏ qua: ${stop.placeName}`,
+      );
       // Đã đến nơi → mời đánh giá địa điểm vừa tham quan
       if (status === 'COMPLETED') setReviewPlace({ placeId: stop.placeId, name: stop.placeName });
     } catch (error) {
@@ -231,39 +271,58 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
   const confirmSkip = () =>
     pendingStop &&
-    Alert.alert('Bỏ qua địa điểm này?', `Bỏ qua “${pendingStop.placeName}” và chuyển tới địa điểm tiếp theo?`, [
-      { text: 'Giữ địa điểm', style: 'cancel' },
-      { text: 'Bỏ qua', style: 'destructive', onPress: () => void updateStop('SKIPPED') },
-    ]);
+    Alert.alert(
+      'Bỏ qua địa điểm này?',
+      `Bỏ qua “${pendingStop.placeName}” và chuyển tới địa điểm tiếp theo?`,
+      [
+        { text: 'Giữ địa điểm', style: 'cancel' },
+        { text: 'Bỏ qua', style: 'destructive', onPress: () => void updateStop('SKIPPED') },
+      ],
+    );
 
   const finishDay = () =>
-    Alert.alert(`Hoàn thành Ngày ${dayNumber}?`, 'Các địa điểm của ngày đã được hoàn thành hoặc bỏ qua. Tiến độ sẽ được lưu vĩnh viễn.', [
-      { text: 'Để sau', style: 'cancel' },
-      {
-        text: 'Hoàn thành ngày',
-        onPress: async () => {
-          setBusy(true);
-          try {
-            setProgress(await tripFlowApi.completeTripDay(planId, dayNumber));
-            setRoute(null);
-            Alert.alert(`Đã hoàn thành Ngày ${dayNumber}`, 'Tiến độ đã lưu thành công. Bạn có thể xem ngày tiếp theo trong lịch trình.', [
-              { text: 'Xem bản đồ', style: 'cancel' },
-              { text: 'Về chi tiết lịch trình', onPress: () => navigation.navigate('ItineraryDay', { planId, day: dayNumber }) },
-            ]);
-          } catch (error) {
-            showToast(errorMessage(error));
-          } finally {
-            setBusy(false);
-          }
+    Alert.alert(
+      `Hoàn thành Ngày ${dayNumber}?`,
+      'Các địa điểm của ngày đã được hoàn thành hoặc bỏ qua. Tiến độ sẽ được lưu vĩnh viễn.',
+      [
+        { text: 'Để sau', style: 'cancel' },
+        {
+          text: 'Hoàn thành ngày',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              setProgress(await tripFlowApi.completeTripDay(planId, dayNumber));
+              setRoute(null);
+              Alert.alert(
+                `Đã hoàn thành Ngày ${dayNumber}`,
+                'Tiến độ đã lưu thành công. Bạn có thể xem ngày tiếp theo trong lịch trình.',
+                [
+                  { text: 'Xem bản đồ', style: 'cancel' },
+                  {
+                    text: 'Về chi tiết lịch trình',
+                    onPress: () => navigation.navigate('ItineraryDay', { planId, day: dayNumber }),
+                  },
+                ],
+              );
+            } catch (error) {
+              showToast(errorMessage(error));
+            } finally {
+              setBusy(false);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
 
   const exit = () =>
-    Alert.alert('Đóng bản đồ?', 'Tiến độ đã được lưu. Bạn có thể trở lại và tiếp tục hành trình sau.', [
-      { text: 'Ở lại', style: 'cancel' },
-      { text: 'Về lịch trình', onPress: () => navigation.goBack() },
-    ]);
+    Alert.alert(
+      'Đóng bản đồ?',
+      'Tiến độ đã được lưu. Bạn có thể trở lại và tiếp tục hành trình sau.',
+      [
+        { text: 'Ở lại', style: 'cancel' },
+        { text: 'Về lịch trình', onPress: () => navigation.goBack() },
+      ],
+    );
 
   if (loading) {
     return (
@@ -275,7 +334,10 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   if (loadError || !overview) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg, padding: 16 }}>
-        <ErrorState message={loadError ?? 'Không tải được lịch trình.'} onRetry={() => setRetry((n) => n + 1)} />
+        <ErrorState
+          message={loadError ?? 'Không tải được lịch trình.'}
+          onRetry={() => setRetry((n) => n + 1)}
+        />
         <Button title="Quay lại" variant="ghost" onPress={() => navigation.goBack()} />
       </SafeAreaView>
     );
@@ -303,35 +365,49 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
               icon="my-location"
               label="Vị trí của tôi"
               background="#FFFFFF"
-              onPress={() => (location ? mapRef.current?.focus(location.latitude, location.longitude, 0.01) : setGpsVersion((v) => v + 1))}
+              onPress={() =>
+                location
+                  ? mapRef.current?.focus(location.latitude, location.longitude, 0.01)
+                  : setGpsVersion((v) => v + 1)
+              }
             />
           </View>
         </SafeAreaView>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 + insets.bottom }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 + insets.bottom }}
+      >
         <View className="mb-3 h-2 overflow-hidden rounded-full bg-[#E3E8EF]">
           <View style={{ width: `${percent}%`, height: '100%', backgroundColor: colors.success }} />
         </View>
 
         {pendingStop ? (
           <View style={shadow.card} className="rounded-3xl bg-white p-4">
-            <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.4px] text-[#0891B2]">Điểm tiếp theo</Text>
-            <Text className="mt-1 text-[18px] font-extrabold text-[#13364A]">{pendingStop.placeName}</Text>
+            <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.4px] text-[#0891B2]">
+              Điểm tiếp theo
+            </Text>
+            <Text className="mt-1 text-[18px] font-extrabold text-[#13364A]">
+              {pendingStop.placeName}
+            </Text>
             <Text numberOfLines={2} className="mt-0.5 text-[12px] text-[#72818C]">
               {pendingStop.placeAddress || 'Chưa có địa chỉ'}
             </Text>
             <View className="mt-2 flex-row items-center gap-1">
               <Icon name="schedule" size={15} color={colors.primary} />
               <Text className="text-[12px] font-bold text-[#0E7490]">
-                {formatTime(pendingStop.startTime)} – {formatTime(pendingStop.endTime)} · giờ dự kiến
+                {formatTime(pendingStop.startTime)} – {formatTime(pendingStop.endTime)} · giờ dự
+                kiến
               </Text>
             </View>
           </View>
         ) : (
           <View className="rounded-3xl bg-white p-4">
             <Text className="text-center text-[13px] text-[#72818C]">
-              {stops.length === 0 ? 'Ngày này không có địa điểm tham quan.' : 'Đã xử lý tất cả địa điểm của ngày.'}
+              {stops.length === 0
+                ? 'Ngày này không có địa điểm tham quan.'
+                : 'Đã xử lý tất cả địa điểm của ngày.'}
             </Text>
           </View>
         )}
@@ -341,7 +417,12 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
             <Notice tone="warning" title="Chưa lấy được vị trí">
               {gpsError}
             </Notice>
-            <Button title="Thử lấy GPS lại" variant="outline" size="sm" onPress={() => setGpsVersion((v) => v + 1)} />
+            <Button
+              title="Thử lấy GPS lại"
+              variant="outline"
+              size="sm"
+              onPress={() => setGpsVersion((v) => v + 1)}
+            />
           </View>
         ) : isRunning && !location ? (
           <Text className="mt-3 text-center text-[12px] text-[#72818C]">Đang lấy vị trí GPS…</Text>
@@ -369,11 +450,17 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                   onPress={() => setVehicle(item.value)}
                   className={`flex-1 items-center rounded-xl py-2 ${vehicle === item.value ? 'bg-[#0891B2]' : 'bg-[#EEF5F7]'}`}
                 >
-                  <Text className={`text-[12.5px] font-bold ${vehicle === item.value ? 'text-white' : 'text-[#557080]'}`}>{item.label}</Text>
+                  <Text
+                    className={`text-[12.5px] font-bold ${vehicle === item.value ? 'text-white' : 'text-[#557080]'}`}
+                  >
+                    {item.label}
+                  </Text>
                 </Pressable>
               ))}
             </View>
-            {routeLoading && !route ? <Text className="mt-3 text-[12px] text-[#72818C]">Đang tính đường đi…</Text> : null}
+            {routeLoading && !route ? (
+              <Text className="mt-3 text-[12px] text-[#72818C]">Đang tính đường đi…</Text>
+            ) : null}
             {routeError ? (
               <View className="mt-3">
                 <Notice tone="danger">{routeError}</Notice>
@@ -391,13 +478,16 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
                     <Text className="text-[11px] text-[#557080]">Thời gian</Text>
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
-                      {route.route.durationText ?? formatDurationSeconds(route.route.durationSeconds)}
+                      {route.route.durationText ??
+                        formatDurationSeconds(route.route.durationSeconds)}
                     </Text>
                   </View>
                 </View>
                 {route.arrived ? (
                   <View className="mt-2.5">
-                    <Notice tone="success">Bạn đã ở gần {route.placeName}. Bấm “Đã đến” khi tham quan xong.</Notice>
+                    <Notice tone="success">
+                      Bạn đã ở gần {route.placeName}. Bấm “Đã đến” khi tham quan xong.
+                    </Notice>
                   </View>
                 ) : null}
                 {route.lowAccuracy ? (
@@ -410,11 +500,17 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                     {(route.route.steps ?? []).slice(0, 6).map((step, index) => (
                       <View key={index} className="flex-row gap-2.5">
                         <View className="h-6 w-6 items-center justify-center rounded-full bg-[#DCF5F8]">
-                          <Text className="text-[10.5px] font-extrabold text-[#0E7490]">{index + 1}</Text>
+                          <Text className="text-[10.5px] font-extrabold text-[#0E7490]">
+                            {index + 1}
+                          </Text>
                         </View>
                         <View className="min-w-0 flex-1">
-                          <Text className="text-[12.5px] leading-[18px] text-[#13364A]">{step.instruction}</Text>
-                          {step.distanceText ? <Text className="text-[11px] text-[#72818C]">{step.distanceText}</Text> : null}
+                          <Text className="text-[12.5px] leading-[18px] text-[#13364A]">
+                            {step.instruction}
+                          </Text>
+                          {step.distanceText ? (
+                            <Text className="text-[11px] text-[#72818C]">{step.distanceText}</Text>
+                          ) : null}
                         </View>
                       </View>
                     ))}
@@ -433,35 +529,67 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
         {reviewPlace ? (
           <View className="mt-3">
-            <Text className="mb-2 text-[14px] font-extrabold text-[#13364A]">Nhận xét {reviewPlace.name}</Text>
-            <ReviewForm key={reviewPlace.placeId} placeId={reviewPlace.placeId} stopTitle={reviewPlace.name} />
+            <Text className="mb-2 text-[14px] font-extrabold text-[#13364A]">
+              Nhận xét {reviewPlace.name}
+            </Text>
+            <ReviewForm
+              key={reviewPlace.placeId}
+              placeId={reviewPlace.placeId}
+              stopTitle={reviewPlace.name}
+            />
           </View>
         ) : null}
 
         <View className="mt-4 gap-2.5">
           {dayStatus === 'NOT_STARTED' ? (
-            <Button title={`Bắt đầu chuyến đi — Ngày ${dayNumber}`} icon="flag" loading={busy} onPress={() => void startDay()} />
+            <Button
+              title={`Bắt đầu chuyến đi — Ngày ${dayNumber}`}
+              icon="flag"
+              loading={busy}
+              onPress={() => void startDay()}
+            />
           ) : null}
           {isRunning && pendingStop ? (
             <View className="flex-row gap-2.5">
               <View className="flex-1">
-                <Button title="Bỏ qua" icon="skip-next" variant="outline" disabled={busy} onPress={confirmSkip} />
+                <Button
+                  title="Bỏ qua"
+                  icon="skip-next"
+                  variant="outline"
+                  disabled={busy}
+                  onPress={confirmSkip}
+                />
               </View>
               <View className="flex-[1.6]">
-                <Button title="Đã đến · Tiếp tục" icon="check-circle" loading={busy} onPress={() => void updateStop('COMPLETED')} />
+                <Button
+                  title="Đã đến · Tiếp tục"
+                  icon="check-circle"
+                  loading={busy}
+                  onPress={() => void updateStop('COMPLETED')}
+                />
               </View>
             </View>
           ) : null}
           {isRunning && allHandled ? (
-            <Button title={`Hoàn thành Ngày ${dayNumber}`} icon="task-alt" loading={busy} onPress={finishDay} />
+            <Button
+              title={`Hoàn thành Ngày ${dayNumber}`}
+              icon="task-alt"
+              loading={busy}
+              onPress={finishDay}
+            />
           ) : null}
           {dayStatus === 'COMPLETED' ? (
-            <Button title="Về chi tiết lịch trình" variant="secondary" onPress={() => navigation.navigate('ItineraryDay', { planId, day: dayNumber })} />
+            <Button
+              title="Về chi tiết lịch trình"
+              variant="secondary"
+              onPress={() => navigation.navigate('ItineraryDay', { planId, day: dayNumber })}
+            />
           ) : null}
         </View>
 
         <Text className="mt-4 text-center text-[11px] leading-[17px] text-[#8193A0]">
-          Goong cung cấp tuyến và thời gian dự kiến. Bạn tự xác nhận đã đến địa điểm; không tự động đánh dấu chỉ dựa vào GPS.
+          Goong cung cấp tuyến và thời gian dự kiến. Bạn tự xác nhận đã đến địa điểm; không tự động
+          đánh dấu chỉ dựa vào GPS.
         </Text>
       </ScrollView>
       <Toast message={toast} />
