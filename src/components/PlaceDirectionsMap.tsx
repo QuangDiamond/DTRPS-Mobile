@@ -89,18 +89,34 @@ export default function PlaceDirectionsMap({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [navigating, setNavigating] = useState(false);
+  const watchRef = useRef<Location.LocationSubscription | null>(null);
 
   const routeCoords = useMemo(
     () => (route?.polyline ? decodePolyline(route.polyline) : undefined),
     [route],
   );
 
-  // Đổi địa điểm → xóa tuyến cũ
+  const stopNavigation = useCallback(() => {
+    watchRef.current?.remove();
+    watchRef.current = null;
+    setNavigating(false);
+  }, []);
+
+  // Đổi địa điểm → xóa tuyến cũ và dừng dẫn đường
   useEffect(() => {
+    stopNavigation();
     setRoute(null);
     setError(null);
     setExpanded(false);
-  }, [placeId]);
+  }, [placeId, stopNavigation]);
+
+  // Đóng modal hoặc unmount → dừng theo dõi GPS để tiết kiệm pin
+  useEffect(() => {
+    if (!expanded) stopNavigation();
+  }, [expanded, stopNavigation]);
+
+  useEffect(() => stopNavigation, [stopNavigation]);
 
   const handledOpenRef = useRef(openMapSignal);
   useEffect(() => {
@@ -174,10 +190,62 @@ export default function PlaceDirectionsMap({
   };
 
   const clearDirections = () => {
+    stopNavigation();
     setRoute(null);
     setError(null);
     inlineMapRef.current?.focus(latitude, longitude);
   };
+
+  /** Bắt đầu / dừng chế độ dẫn đường GPS realtime trong modal bản đồ Goong */
+  const toggleNavigation = useCallback(async () => {
+    if (navigating) {
+      stopNavigation();
+      modalMapRef.current?.fitAll();
+      return;
+    }
+    if (!isAuthenticated) {
+      onRequireLogin();
+      return;
+    }
+    if (!route) {
+      await startDirections(vehicle);
+    }
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setError('Bạn cần cấp quyền vị trí để bắt đầu dẫn đường.');
+        return;
+      }
+      setNavigating(true);
+      if (userLocation) {
+        modalMapRef.current?.focus(userLocation.latitude, userLocation.longitude, 0.004);
+      }
+      watchRef.current?.remove();
+      watchRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
+        (pos) => {
+          const next: LatLng = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
+          setUserLocation(next);
+          modalMapRef.current?.focus(next.latitude, next.longitude, 0.004);
+        },
+      );
+    } catch {
+      stopNavigation();
+      setError('Không thể theo dõi GPS lúc này. Vui lòng thử lại.');
+    }
+  }, [
+    isAuthenticated,
+    navigating,
+    onRequireLogin,
+    route,
+    startDirections,
+    stopNavigation,
+    userLocation,
+    vehicle,
+  ]);
 
   const points = useMemo(
     () => [{ id: String(placeId), latitude, longitude, label: '•', title: placeName }],
@@ -318,12 +386,21 @@ export default function PlaceDirectionsMap({
               })}
             </View>
             <Button
-              title={loading ? 'Đang tìm...' : 'Chỉ đường'}
-              icon="directions"
+              title={
+                loading
+                  ? 'Đang tìm...'
+                  : !route
+                    ? 'Chỉ đường'
+                    : navigating
+                      ? 'Dừng đi'
+                      : 'Bắt đầu đi'
+              }
+              icon={!route ? 'directions' : navigating ? 'stop' : 'navigation'}
+              variant={navigating ? 'danger' : 'primary'}
               size="sm"
               full={false}
               loading={loading}
-              onPress={() => void startDirections(vehicle)}
+              onPress={() => void (route ? toggleNavigation() : startDirections(vehicle))}
             />
           </View>
 
@@ -334,6 +411,7 @@ export default function PlaceDirectionsMap({
               activeId={String(placeId)}
               route={routeCoords}
               userLocation={userLocation}
+              followUser={navigating}
             />
           </View>
 
