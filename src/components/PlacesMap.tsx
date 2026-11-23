@@ -6,12 +6,16 @@ import {
   Marker,
   type CameraRef,
   type LngLat,
+  type PressEvent,
   type StyleSpecification,
+  type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import { View, type StyleProp, type ViewStyle } from 'react-native';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { View, type NativeSyntheticEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { colors } from '../theme';
+import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Typography';
+import { circleRing, distanceBetween } from '../utils/navGeo';
 
 export interface MapPoint {
   id: string;
@@ -84,18 +88,55 @@ const PlacesMap = forwardRef<
     points: MapPoint[];
     activeId?: string | null;
     onSelect?: (id: string) => void;
+    /** Phần tuyến còn phải đi (hoặc cả tuyến khi chưa bám tuyến) */
     route?: LatLng[];
+    /** Phần tuyến đã đi — vẽ màu xám */
+    doneRoute?: LatLng[];
     userLocation?: LatLng | null;
+    /** Hướng đi (độ từ hướng Bắc) để vẽ mũi tên chỉ hướng */
+    userHeading?: number | null;
+    /** Sai số GPS (mét) để vẽ vòng tròn quanh vị trí */
+    userAccuracy?: number | null;
     style?: StyleProp<ViewStyle>;
+    /** Camera bám theo vị trí, xoay theo hướng đi (kiểu Google Maps) */
     followUser?: boolean;
+    /** Người dùng tự kéo/xoay/zoom bản đồ → thường dùng để tắt followUser */
+    onUserInteract?: () => void;
+    /** Khi có: bấm lên bản đồ trả về tọa độ (chọn vị trí xuất phát thủ công) */
+    onPick?: (latitude: number, longitude: number) => void;
   }
->(function PlacesMap({ points, activeId, onSelect, route, userLocation, style, followUser }, ref) {
+>(function PlacesMap(
+  {
+    points,
+    activeId,
+    onSelect,
+    route,
+    doneRoute,
+    userLocation,
+    userHeading,
+    userAccuracy,
+    style,
+    followUser,
+    onUserInteract,
+    onPick,
+  },
+  ref,
+) {
   const cameraRef = useRef<CameraRef>(null);
+  const [bearing, setBearing] = useState(0);
+  const bearingRef = useRef(0);
 
   const coordinates = useMemo(() => {
     const list: LngLat[] = points.map((p) => [p.longitude, p.latitude]);
-    if (userLocation) list.push([userLocation.longitude, userLocation.latitude]);
     if (route) list.push(...route.map((p): LngLat => [p.longitude, p.latitude]));
+    // Vị trí người dùng chỉ đưa vào khung nhìn khi ở gần tuyến/điểm (≤ 30 km) — tránh GPS sai kéo bản đồ ra nước ngoài
+    if (userLocation) {
+      const anchor = points[0] ?? route?.[0];
+      const near =
+        !anchor ||
+        distanceBetween([anchor.latitude, anchor.longitude], [userLocation.latitude, userLocation.longitude]) <= 30_000;
+      if (near) list.push([userLocation.longitude, userLocation.latitude]);
+    }
     return list;
   }, [points, userLocation, route]);
 
@@ -103,13 +144,15 @@ const PlacesMap = forwardRef<
     const camera = cameraRef.current;
     if (!camera || coordinates.length === 0) return;
     if (coordinates.length === 1) {
-      camera.easeTo({ center: coordinates[0], zoom: 14, duration: 350 });
+      camera.easeTo({ center: coordinates[0], zoom: 14, bearing: 0, pitch: 0, duration: 350 });
       return;
     }
     const lngs = coordinates.map((c) => c[0]);
     const lats = coordinates.map((c) => c[1]);
     camera.fitBounds([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)], {
       padding: { top: 60, right: 50, bottom: 60, left: 50 },
+      bearing: 0,
+      pitch: 0,
       duration: 350,
     });
   };
@@ -128,17 +171,46 @@ const PlacesMap = forwardRef<
     return () => clearTimeout(timer);
   }, [signature]);
 
-  const routeShape = useMemo<GeoJSON.Feature | null>(
+  // Chế độ bám theo: camera đi theo vị trí và xoay theo hướng di chuyển
+  useEffect(() => {
+    if (!followUser || !userLocation) return;
+    cameraRef.current?.easeTo({
+      center: [userLocation.longitude, userLocation.latitude],
+      zoom: 17,
+      pitch: 45,
+      bearing: typeof userHeading === 'number' ? userHeading : bearingRef.current,
+      duration: 700,
+    });
+  }, [followUser, userLocation?.latitude, userLocation?.longitude, userHeading]);
+
+  const lineFeature = (list?: LatLng[]): GeoJSON.Feature | null =>
+    list && list.length > 1
+      ? {
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: list.map((p) => [p.longitude, p.latitude]) },
+        }
+      : null;
+
+  const routeShape = useMemo(() => lineFeature(route), [route]);
+  const doneShape = useMemo(() => lineFeature(doneRoute), [doneRoute]);
+
+  const accuracyShape = useMemo<GeoJSON.Feature | null>(
     () =>
-      route && route.length > 1
+      userLocation && typeof userAccuracy === 'number' && userAccuracy >= 15
         ? {
             type: 'Feature',
             properties: {},
-            geometry: { type: 'LineString', coordinates: route.map((p) => [p.longitude, p.latitude]) },
+            geometry: {
+              type: 'Polygon',
+              coordinates: [circleRing([userLocation.latitude, userLocation.longitude], Math.min(userAccuracy, 500))],
+            },
           }
         : null,
-    [route],
+    [userLocation, userAccuracy],
   );
+
+  const hasHeading = typeof userHeading === 'number';
 
   return (
     <Map
@@ -148,18 +220,54 @@ const PlacesMap = forwardRef<
       attribution={false}
       compass={false}
       onDidFinishLoadingMap={fitAll}
+      onPress={
+        onPick
+          ? (event: NativeSyntheticEvent<PressEvent>) => {
+              const [lng, lat] = event.nativeEvent.lngLat;
+              onPick(lat, lng);
+            }
+          : undefined
+      }
+      onRegionWillChange={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+        if (event.nativeEvent.userInteraction) onUserInteract?.();
+      }}
+      onRegionDidChange={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+        bearingRef.current = event.nativeEvent.bearing;
+        setBearing(Math.round(event.nativeEvent.bearing));
+      }}
     >
       <Camera
         ref={cameraRef}
         initialViewState={{ center: coordinates[0] ?? VIETNAM_CENTER, zoom: coordinates[0] ? 12 : 4.5 }}
       />
 
+      {accuracyShape ? (
+        <GeoJSONSource id="accuracy" data={accuracyShape}>
+          <Layer id="accuracy-fill" type="fill" style={{ fillColor: '#2563EB', fillOpacity: 0.12 }} />
+        </GeoJSONSource>
+      ) : null}
+
       {routeShape ? (
         <GeoJSONSource id="route" data={routeShape}>
           <Layer
+            id="route-casing"
+            type="line"
+            style={{ lineColor: '#FFFFFF', lineWidth: 9, lineCap: 'round', lineJoin: 'round' }}
+          />
+          <Layer
             id="route-line"
             type="line"
-            style={{ lineColor: colors.primary, lineWidth: 5, lineCap: 'round', lineJoin: 'round' }}
+            style={{ lineColor: colors.primary, lineWidth: 6, lineCap: 'round', lineJoin: 'round' }}
+          />
+        </GeoJSONSource>
+      ) : null}
+
+      {doneShape ? (
+        <GeoJSONSource id="route-done" data={doneShape}>
+          <Layer
+            id="route-done-line"
+            type="line"
+            style={{ lineColor: '#9AA9B3', lineWidth: 6, lineCap: 'round', lineJoin: 'round' }}
           />
         </GeoJSONSource>
       ) : null}
@@ -196,17 +304,37 @@ const PlacesMap = forwardRef<
 
       {userLocation ? (
         <Marker id="me" lngLat={[userLocation.longitude, userLocation.latitude]} anchor="center">
-          <View
-            accessibilityLabel="Vị trí của bạn"
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              backgroundColor: '#2563EB',
-              borderWidth: 3,
-              borderColor: '#FFFFFF',
-            }}
-          />
+          {hasHeading ? (
+            <View
+              accessibilityLabel="Vị trí của bạn"
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                backgroundColor: '#2563EB',
+                borderWidth: 3,
+                borderColor: '#FFFFFF',
+                alignItems: 'center',
+                justifyContent: 'center',
+                // Mũi tên chỉ hướng, bù góc xoay hiện tại của bản đồ
+                transform: [{ rotate: `${(((userHeading as number) - bearing) % 360 + 360) % 360}deg` }],
+              }}
+            >
+              <Icon name="navigation" size={18} color="#FFFFFF" />
+            </View>
+          ) : (
+            <View
+              accessibilityLabel="Vị trí của bạn"
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 10,
+                backgroundColor: '#2563EB',
+                borderWidth: 3,
+                borderColor: '#FFFFFF',
+              }}
+            />
+          )}
         </Marker>
       ) : null}
     </Map>

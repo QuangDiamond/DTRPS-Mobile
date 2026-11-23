@@ -1,4 +1,3 @@
-import * as Location from 'expo-location';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../../ui/Typography';
@@ -17,10 +16,13 @@ import TodayWeatherCard from '../../components/TodayWeatherCard';
 import type { RootScreenProps } from '../../navigation/types';
 import { colors, shadow } from '../../theme';
 import { Button, IconButton } from '../../ui/Button';
-import { Icon } from '../../ui/Icon';
+import { Icon, type IconName } from '../../ui/Icon';
 import { ErrorState, Loading, Notice } from '../../ui/States';
 import { Toast, useToast } from '../../ui/Toast';
 import { formatTime } from '../../utils/format';
+import { formatMeters, formatSeconds, type Coordinate } from '../../utils/navGeo';
+import { useGpsTracker } from '../../utils/useGpsTracker';
+import { toLatLng, useNavigationGuidance } from '../../utils/useNavigationGuidance';
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -29,33 +31,6 @@ const VEHICLES: { value: GoongVehicle; label: string }[] = [
   { value: 'bike', label: 'Xe máy' },
   { value: 'taxi', label: 'Taxi' },
 ];
-
-/** Giải mã encoded polyline của Goong (giống web) */
-function decodePolyline(encoded: string): LatLng[] {
-  const coordinates: LatLng[] = [];
-  let index = 0;
-  let latitude = 0;
-  let longitude = 0;
-  while (index < encoded.length) {
-    const numbers: number[] = [];
-    for (let i = 0; i < 2; i++) {
-      let shift = 0;
-      let result = 0;
-      let byte: number;
-      do {
-        if (index >= encoded.length || shift > 30) return [];
-        byte = encoded.charCodeAt(index++) - 63;
-        result |= (byte & 0x1f) << shift;
-        shift += 5;
-      } while (byte >= 0x20);
-      numbers.push(result & 1 ? ~(result >> 1) : result >> 1);
-    }
-    latitude += numbers[0];
-    longitude += numbers[1];
-    coordinates.push({ latitude: latitude / 1e5, longitude: longitude / 1e5 });
-  }
-  return coordinates;
-}
 
 /** Khoảng cách đường chim bay (mét) */
 function distanceMeters(a: LatLng, b: LatLng): number {
@@ -86,9 +61,11 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const [retry, setRetry] = useState(0);
   const [busy, setBusy] = useState(false);
   const [vehicle, setVehicle] = useState<GoongVehicle>('car');
-  const [location, setLocation] = useState<(LatLng & { accuracy: number | null }) | null>(null);
-  const [gpsError, setGpsError] = useState<string | null>(null);
-  const [gpsVersion, setGpsVersion] = useState(0);
+  // Chế độ dẫn đường toàn màn hình kiểu Google Maps
+  const [navMode, setNavMode] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [route, setRoute] = useState<NextTripRoute | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
@@ -96,6 +73,7 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const [reviewPlace, setReviewPlace] = useState<{ placeId: number; name: string } | null>(null);
   const lastRequest = useRef<{ itemId: number; location: LatLng; vehicle: GoongVehicle; time: number } | null>(null);
   const sequence = useRef(0);
+  const onRouteRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -113,35 +91,6 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
     };
   }, [planId, retry]);
 
-  // Theo dõi GPS
-  useEffect(() => {
-    let subscription: Location.LocationSubscription | null = null;
-    let cancelled = false;
-    (async () => {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        setGpsError('Cần cấp quyền vị trí để chỉ đường tới địa điểm tiếp theo.');
-        return;
-      }
-      setGpsError(null);
-      subscription = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, distanceInterval: 15, timeInterval: 5000 },
-        (position) => {
-          if (cancelled) return;
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy ?? null,
-          });
-        },
-      );
-    })().catch((caught: unknown) => setGpsError(errorMessage(caught)));
-    return () => {
-      cancelled = true;
-      subscription?.remove();
-    };
-  }, [gpsVersion]);
-
   const currentDay = overview?.days.find((entry) => entry.dayNumber === dayNumber);
   const progressDay = progress?.days.find((entry) => entry.dayNumber === dayNumber);
   const dayStatus = progressDay?.status ?? 'NOT_STARTED';
@@ -154,6 +103,14 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const percent = stops.length ? Math.round((100 * completedCount) / stops.length) : 100;
   const allHandled = completedCount === stops.length;
 
+  // GPS đã lọc vị trí xấu (ngoài Việt Nam, sai số lớn, nhảy bất thường)
+  const tracker = useGpsTracker(isRunning);
+  const { fix } = tracker;
+  const location = useMemo(
+    () => (fix ? { latitude: fix.coordinate[0], longitude: fix.coordinate[1], accuracy: fix.accuracy } : null),
+    [fix],
+  );
+
   // Gọi Goong Directions qua Backend: đổi điểm đến/phương tiện thì tính lại; GPS thay đổi thì giới hạn tần suất
   useEffect(() => {
     if (!isRunning || !pendingStop || !location) {
@@ -165,6 +122,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
     const now = Date.now();
     const last = lastRequest.current;
     if (last && last.itemId === pendingStop.itemId && last.vehicle === vehicle) {
+      // Đang đi đúng tuyến: không cần hỏi Goong lại
+      if (onRouteRef.current) return;
       const moved = distanceMeters(last.location, location);
       const elapsed = now - last.time;
       if (elapsed < 12_000 || (moved < 80 && elapsed < 45_000)) return;
@@ -188,7 +147,43 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
       });
   }, [isRunning, pendingStop?.itemId, location, vehicle, planId, dayNumber, rerouteVersion]);
 
-  const polyline = useMemo(() => (route?.route.polyline ? decodePolyline(route.route.polyline) : []), [route]);
+  const routeForStop = route && pendingStop && route.itemId === pendingStop.itemId ? route : null;
+  const destination = useMemo(
+    () =>
+      pendingStop && hasCoordinate(pendingStop)
+        ? { name: pendingStop.placeName, coordinate: [pendingStop.latitude, pendingStop.longitude] as Coordinate }
+        : null,
+    [pendingStop],
+  );
+  const nav = useNavigationGuidance({
+    route: routeForStop?.route ?? null,
+    fix,
+    destination,
+    loading: routeLoading,
+    active: isRunning && Boolean(pendingStop),
+    onOffRoute: () => {
+      lastRequest.current = null;
+      setRerouteVersion((v) => v + 1);
+    },
+  });
+  onRouteRef.current = nav.onRoute;
+  const todoLine = useMemo(() => nav.parts.todo.map(toLatLng), [nav.parts.todo]);
+  const doneLine = useMemo(() => nav.parts.done.map(toLatLng), [nav.parts.done]);
+  const userMarker = useMemo(() => (nav.displayLocation ? toLatLng(nav.displayLocation) : null), [nav.displayLocation]);
+
+  const startNavigation = () => {
+    setNavMode(true);
+    setFollowing(true);
+    setSheetOpen(false);
+    setPicking(false);
+  };
+  const stopNavigation = () => {
+    setNavMode(false);
+    setFollowing(false);
+    setSheetOpen(false);
+  };
+  const bottomInset = Math.max(insets.bottom, 10);
+  const BAR_HEIGHT = 74;
   const mapPoints = stops.filter(hasCoordinate).map((item) => ({
     id: String(item.itemId),
     latitude: item.latitude,
@@ -283,15 +278,30 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={{ height: '42%' }}>
+      <View style={navMode ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } : { height: '42%' }}>
         <PlacesMap
           ref={mapRef}
           points={mapPoints}
           activeId={pendingStop ? String(pendingStop.itemId) : null}
-          route={polyline}
-          userLocation={location}
+          route={todoLine}
+          doneRoute={doneLine}
+          userLocation={userMarker}
+          userHeading={fix?.heading ?? null}
+          userAccuracy={fix?.accuracy ?? null}
+          followUser={navMode && following}
+          onUserInteract={() => setFollowing(false)}
+          onPick={
+            picking
+              ? (latitude, longitude) => {
+                  tracker.setManual([latitude, longitude]);
+                  setPicking(false);
+                  lastRequest.current = null;
+                  showToast('Đã dùng vị trí bạn chọn trên bản đồ để chỉ đường.');
+                }
+              : undefined
+          }
         />
-        <SafeAreaView edges={['top']} style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+        <SafeAreaView edges={['top']} pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
           <View className="flex-row items-center gap-2 px-3 pt-2">
             <IconButton icon="close" label="Đóng bản đồ" onPress={exit} background="#FFFFFF" />
             <View style={shadow.card} className="flex-1 rounded-full bg-white px-4 py-2">
@@ -303,13 +313,61 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
               icon="my-location"
               label="Vị trí của tôi"
               background="#FFFFFF"
-              onPress={() => (location ? mapRef.current?.focus(location.latitude, location.longitude, 0.01) : setGpsVersion((v) => v + 1))}
+              onPress={() => {
+                if (location) {
+                  if (navMode) setFollowing(true);
+                  mapRef.current?.focus(location.latitude, location.longitude, 0.01);
+                } else {
+                  tracker.retry();
+                }
+              }}
             />
           </View>
+          {picking ? (
+            <View style={shadow.raised} className="mx-3 mt-2 flex-row items-center gap-3 rounded-2xl bg-[#13364A] px-4 py-3">
+              <Icon name="place" size={26} color="#FFFFFF" />
+              <Text className="flex-1 text-[13px] font-bold leading-[18px] text-white">Chạm lên bản đồ để chọn vị trí của bạn</Text>
+              <Pressable onPress={() => setPicking(false)} className="rounded-full bg-white/20 px-3 py-1.5">
+                <Text className="text-[11px] font-extrabold text-white">Hủy</Text>
+              </Pressable>
+            </View>
+          ) : nav.guidance ? (
+            <View
+              style={shadow.raised}
+              className={`mx-3 mt-2 flex-row items-center gap-3 rounded-2xl px-4 py-3 ${
+                nav.guidance.icon === 'alt-route' ? 'bg-[#B45309]' : nav.arrived ? 'bg-[#13936B]' : 'bg-[#13364A]'
+              }`}
+            >
+              <Icon name={nav.guidance.icon as IconName} size={36} color="#FFFFFF" />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[19px] font-extrabold leading-[23px] text-white">{nav.guidance.title}</Text>
+                <Text numberOfLines={2} className="mt-0.5 text-[12.5px] font-semibold leading-[17px] text-white/90">
+                  {nav.guidance.text}
+                </Text>
+              </View>
+            </View>
+          ) : null}
         </SafeAreaView>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 + insets.bottom }}>
+      <ScrollView
+        style={
+          navMode
+            ? {
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: BAR_HEIGHT + bottomInset,
+                maxHeight: '55%',
+                backgroundColor: colors.bg,
+                borderTopLeftRadius: 24,
+                borderTopRightRadius: 24,
+                display: sheetOpen ? 'flex' : 'none',
+              }
+            : { flex: 1 }
+        }
+        contentContainerStyle={{ padding: 16, paddingBottom: navMode ? 16 : 32 + insets.bottom }}
+      >
         <View className="mb-3 h-2 overflow-hidden rounded-full bg-[#E3E8EF]">
           <View style={{ width: `${percent}%`, height: '100%', backgroundColor: colors.success }} />
         </View>
@@ -336,15 +394,46 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
           </View>
         )}
 
-        {gpsError ? (
-          <View className="mt-3">
-            <Notice tone="warning" title="Chưa lấy được vị trí">
-              {gpsError}
+        {isRunning && tracker.suspicious ? (
+          <View className="mt-3 gap-2">
+            <Notice tone="warning" title="Vị trí GPS có vẻ không đúng">
+              {tracker.message} Hãy thử lại GPS hoặc chọn vị trí của bạn trên bản đồ.
             </Notice>
-            <Button title="Thử lấy GPS lại" variant="outline" size="sm" onPress={() => setGpsVersion((v) => v + 1)} />
+            <View className="flex-row gap-2">
+              <View className="flex-1">
+                <Button title="Thử GPS lại" variant="outline" size="sm" onPress={tracker.retry} />
+              </View>
+              <View className="flex-1">
+                <Button
+                  title="Chọn vị trí của tôi"
+                  icon="place"
+                  size="sm"
+                  onPress={() => {
+                    setNavMode(false);
+                    setPicking(true);
+                  }}
+                />
+              </View>
+            </View>
           </View>
         ) : isRunning && !location ? (
-          <Text className="mt-3 text-center text-[12px] text-[#72818C]">Đang lấy vị trí GPS…</Text>
+          <View className="mt-3 gap-2">
+            <Text className="text-center text-[12px] text-[#72818C]">{tracker.message}</Text>
+            <Button title="Thử lấy GPS lại" variant="outline" size="sm" onPress={tracker.retry} />
+          </View>
+        ) : null}
+
+        {isRunning && tracker.manual ? (
+          <View className="mt-3">
+            <Notice tone="info">Đang dùng vị trí bạn chọn trên bản đồ.</Notice>
+            <Button title="Dùng GPS thật" variant="outline" size="sm" onPress={tracker.clearManual} />
+          </View>
+        ) : null}
+
+        {isRunning && pendingStop && location && !navMode ? (
+          <View className="mt-3">
+            <Button title="Bắt đầu dẫn đường" icon="navigation" onPress={startNavigation} />
+          </View>
         ) : null}
 
         {isRunning && pendingStop ? (
@@ -383,19 +472,19 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
               <View className="mt-3">
                 <View className="flex-row gap-3">
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
-                    <Text className="text-[11px] text-[#557080]">Quãng đường</Text>
+                    <Text className="text-[11px] text-[#557080]">Còn lại</Text>
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
-                      {route.route.distanceText ?? formatDistance(route.route.distanceMeters)}
+                      {nav.remaining ? formatMeters(nav.remaining.meters) : (route.route.distanceText ?? formatDistance(route.route.distanceMeters))}
                     </Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
                     <Text className="text-[11px] text-[#557080]">Thời gian</Text>
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
-                      {route.route.durationText ?? formatDurationSeconds(route.route.durationSeconds)}
+                      {nav.remaining ? formatSeconds(nav.remaining.seconds) : (route.route.durationText ?? formatDurationSeconds(route.route.durationSeconds))}
                     </Text>
                   </View>
                 </View>
-                {route.arrived ? (
+                {route.arrived || nav.arrived ? (
                   <View className="mt-2.5">
                     <Notice tone="success">Bạn đã ở gần {route.placeName}. Bấm “Đã đến” khi tham quan xong.</Notice>
                   </View>
@@ -464,6 +553,47 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
           Goong cung cấp tuyến và thời gian dự kiến. Bạn tự xác nhận đã đến địa điểm; không tự động đánh dấu chỉ dựa vào GPS.
         </Text>
       </ScrollView>
+
+      {navMode ? (
+        <View
+          style={[shadow.raised, { position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_HEIGHT + bottomInset, paddingBottom: bottomInset }]}
+          className="rounded-t-3xl bg-white px-4 pt-3"
+        >
+          <View className="flex-row items-center gap-2.5">
+            <View className="min-w-0 flex-1">
+              <Text numberOfLines={1} className="text-[18px] font-extrabold text-[#13364A]">
+                {nav.arrived
+                  ? 'Bạn đã đến nơi'
+                  : nav.remaining
+                    ? `${formatMeters(nav.remaining.meters)} · ${formatSeconds(nav.remaining.seconds)}`
+                    : pendingStop
+                      ? routeLoading
+                        ? 'Đang tính đường đi…'
+                        : 'Chưa có tuyến đường'
+                      : 'Đã xử lý hết địa điểm'}
+              </Text>
+              <Text numberOfLines={1} className="text-[12px] text-[#72818C]">
+                {pendingStop?.placeName ?? `Ngày ${dayNumber}`}
+              </Text>
+            </View>
+            <IconButton
+              icon="my-location"
+              label="Bám theo vị trí"
+              background={following ? colors.primary : '#EEF5F7'}
+              color={following ? '#FFFFFF' : colors.primary}
+              onPress={() => setFollowing(true)}
+            />
+            <IconButton
+              icon={sheetOpen ? 'expand-more' : 'expand-less'}
+              label={sheetOpen ? 'Ẩn thông tin' : 'Hiện thông tin'}
+              background="#EEF5F7"
+              color={colors.primary}
+              onPress={() => setSheetOpen((open) => !open)}
+            />
+            <IconButton icon="logout" label="Thoát dẫn đường" background={colors.dangerSoft} color={colors.danger} onPress={stopNavigation} />
+          </View>
+        </View>
+      ) : null}
       <Toast message={toast} />
     </View>
   );

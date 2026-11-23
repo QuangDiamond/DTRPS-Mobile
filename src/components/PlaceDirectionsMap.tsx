@@ -9,6 +9,9 @@ import { colors } from '../theme';
 import { Button, IconButton } from '../ui/Button';
 import { Icon, type IconName } from '../ui/Icon';
 import { Text } from '../ui/Typography';
+import { formatMeters, formatSeconds, type Coordinate } from '../utils/navGeo';
+import { useGpsTracker } from '../utils/useGpsTracker';
+import { toLatLng, useNavigationGuidance } from '../utils/useNavigationGuidance';
 import PlacesMap, { type PlacesMapHandle } from './PlacesMap';
 
 type LatLng = { latitude: number; longitude: number };
@@ -90,7 +93,14 @@ export default function PlaceDirectionsMap({
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [navigating, setNavigating] = useState(false);
-  const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const [following, setFollowing] = useState(true);
+
+  // Dẫn đường: GPS đã lọc vị trí xấu, bám tuyến, chỉ dẫn rẽ, tự tính lại khi đi lệch
+  const tracker = useGpsTracker(navigating);
+  const destination = useMemo(
+    () => ({ name: placeName, coordinate: [latitude, longitude] as Coordinate }),
+    [placeName, latitude, longitude],
+  );
 
   const routeCoords = useMemo(
     () => (route?.polyline ? decodePolyline(route.polyline) : undefined),
@@ -98,8 +108,6 @@ export default function PlaceDirectionsMap({
   );
 
   const stopNavigation = useCallback(() => {
-    watchRef.current?.remove();
-    watchRef.current = null;
     setNavigating(false);
   }, []);
 
@@ -210,42 +218,29 @@ export default function PlaceDirectionsMap({
     if (!route) {
       await startDirections(vehicle);
     }
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setError('Bạn cần cấp quyền vị trí để bắt đầu dẫn đường.');
-        return;
-      }
-      setNavigating(true);
-      if (userLocation) {
-        modalMapRef.current?.focus(userLocation.latitude, userLocation.longitude, 0.004);
-      }
-      watchRef.current?.remove();
-      watchRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
-        (pos) => {
-          const next: LatLng = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          };
-          setUserLocation(next);
-          modalMapRef.current?.focus(next.latitude, next.longitude, 0.004);
-        },
-      );
-    } catch {
-      stopNavigation();
-      setError('Không thể theo dõi GPS lúc này. Vui lòng thử lại.');
-    }
-  }, [
-    isAuthenticated,
-    navigating,
-    onRequireLogin,
+    setError(null);
+    setFollowing(true);
+    setNavigating(true);
+  }, [isAuthenticated, navigating, onRequireLogin, route, startDirections, stopNavigation, vehicle]);
+
+  const nav = useNavigationGuidance({
     route,
-    startDirections,
-    stopNavigation,
-    userLocation,
-    vehicle,
-  ]);
+    fix: navigating ? tracker.fix : null,
+    destination,
+    loading,
+    active: navigating,
+    // Đi lệch tuyến → tính lại từ vị trí hiện tại
+    onOffRoute: () => {
+      if (tracker.fix) void fetchRoute(toLatLng(tracker.fix.coordinate), vehicle);
+    },
+  });
+
+  const todoLine = useMemo(() => (route ? nav.parts.todo.map(toLatLng) : undefined), [route, nav.parts.todo]);
+  const doneLine = useMemo(() => nav.parts.done.map(toLatLng), [nav.parts.done]);
+  const modalUser = useMemo(
+    () => (navigating && nav.displayLocation ? toLatLng(nav.displayLocation) : userLocation),
+    [navigating, nav.displayLocation, userLocation],
+  );
 
   const points = useMemo(
     () => [{ id: String(placeId), latitude, longitude, label: '•', title: placeName }],
@@ -256,6 +251,9 @@ export default function PlaceDirectionsMap({
   const durationLabel = route
     ? (route.durationText ?? formatDurationSeconds(route.durationSeconds))
     : null;
+  // Khi đang dẫn đường: số liệu còn lại theo vị trí thật
+  const liveLabel =
+    navigating && nav.remaining ? `${formatMeters(nav.remaining.meters)} · ${formatSeconds(nav.remaining.seconds)}` : null;
 
   return (
     <View className="mt-6">
@@ -409,10 +407,59 @@ export default function PlaceDirectionsMap({
               ref={modalMapRef}
               points={points}
               activeId={String(placeId)}
-              route={routeCoords}
-              userLocation={userLocation}
-              followUser={navigating}
+              route={navigating ? todoLine : routeCoords}
+              doneRoute={navigating ? doneLine : undefined}
+              userLocation={modalUser}
+              userHeading={navigating ? (tracker.fix?.heading ?? null) : null}
+              userAccuracy={navigating ? (tracker.fix?.accuracy ?? null) : null}
+              followUser={navigating && following}
+              onUserInteract={() => setFollowing(false)}
             />
+
+            {navigating ? (
+              <View pointerEvents="box-none" style={{ position: 'absolute', top: 8, left: 12, right: 12, gap: 8 }}>
+                {tracker.suspicious ? (
+                  <View className="rounded-2xl bg-[#B45309] px-4 py-3">
+                    <Text className="text-[12.5px] font-bold leading-[17px] text-white">
+                      {tracker.message} Hãy thử bật lại GPS.
+                    </Text>
+                    <Pressable onPress={tracker.retry} className="mt-2 self-start rounded-full bg-white/25 px-3 py-1.5">
+                      <Text className="text-[11.5px] font-extrabold text-white">Thử GPS lại</Text>
+                    </Pressable>
+                  </View>
+                ) : nav.guidance ? (
+                  <View
+                    className={`flex-row items-center gap-3 rounded-2xl px-4 py-3 ${
+                      nav.guidance.icon === 'alt-route' ? 'bg-[#B45309]' : nav.arrived ? 'bg-[#13936B]' : 'bg-[#13364A]'
+                    }`}
+                  >
+                    <Icon name={nav.guidance.icon as IconName} size={36} color="#FFFFFF" />
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-[19px] font-extrabold leading-[23px] text-white">{nav.guidance.title}</Text>
+                      <Text numberOfLines={2} className="mt-0.5 text-[12.5px] font-semibold leading-[17px] text-white/90">
+                        {nav.guidance.text}
+                      </Text>
+                    </View>
+                  </View>
+                ) : !tracker.fix ? (
+                  <View className="rounded-2xl bg-[#13364A] px-4 py-3">
+                    <Text className="text-[12.5px] font-bold text-white">{tracker.message}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {navigating ? (
+              <View style={{ position: 'absolute', right: 12, bottom: 12 }}>
+                <IconButton
+                  icon="my-location"
+                  label="Bám theo vị trí"
+                  background={following ? colors.primary : '#FFFFFF'}
+                  color={following ? '#FFFFFF' : colors.primary}
+                  onPress={() => setFollowing(true)}
+                />
+              </View>
+            ) : null}
           </View>
 
           {route || error ? (
@@ -426,7 +473,7 @@ export default function PlaceDirectionsMap({
                       Tuyến đường Goong Maps
                     </Text>
                     <Text className="mt-0.5 text-[15px] font-extrabold text-[#13364A]">
-                      {distanceLabel} · {durationLabel}
+                      {liveLabel ?? `${distanceLabel} · ${durationLabel}`}
                     </Text>
                   </View>
                   <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}>
