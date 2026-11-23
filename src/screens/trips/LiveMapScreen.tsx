@@ -3,8 +3,10 @@ import { Alert, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../../ui/Typography';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { errorMessage } from '../../api/http';
+import { mapsApi, type NearbyPlace } from '../../api/mapsApi';
 import {
   tripFlowApi,
+  type GoongRoute,
   type GoongVehicle,
   type ItineraryOverview,
   type NextTripRoute,
@@ -21,11 +23,15 @@ import { ErrorState, Loading, Notice } from '../../ui/States';
 import { Toast, useToast } from '../../ui/Toast';
 import { formatTime } from '../../utils/format';
 import { setNavigationLockScreen } from '../../utils/lockScreen';
+import { speakNavigation, stopNavigationSpeech } from '../../utils/voiceGuidance';
 import { formatMeters, formatSeconds, type Coordinate } from '../../utils/navGeo';
 import { useGpsTracker } from '../../utils/useGpsTracker';
-import { toLatLng, useNavigationGuidance } from '../../utils/useNavigationGuidance';
+import { decodePolyline, toLatLng, useNavigationGuidance } from '../../utils/useNavigationGuidance';
 
 type LatLng = { latitude: number; longitude: number };
+
+/** Màu tuyến và nhãn khi ghé tạm cây xăng */
+const DETOUR_COLOR = '#EA580C';
 
 const VEHICLES: { value: GoongVehicle; label: string }[] = [
   { value: 'car', label: 'Ô tô' },
@@ -76,6 +82,22 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const [following, setFollowing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+  // Lớp bản đồ và giọng đọc: giữ nguyên xuyên suốt cả ngày (không reset khi sang điểm tiếp theo)
+  const [satellite, setSatellite] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  // Tuyến thay thế của chặng hiện tại (0 = tuyến chính Goong đề xuất)
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
+  const [showRoutesPanel, setShowRoutesPanel] = useState(false);
+  // Ghé tạm cây xăng (detour): tuyến tới cây xăng thay tuyến chính cho tới khi quay lại
+  const [gasStations, setGasStations] = useState<NearbyPlace[]>([]);
+  const [gasLoading, setGasLoading] = useState(false);
+  const [gasError, setGasError] = useState<string | null>(null);
+  const [showGasPanel, setShowGasPanel] = useState(false);
+  const [detourStop, setDetourStop] = useState<NearbyPlace | null>(null);
+  const [detourRoute, setDetourRoute] = useState<GoongRoute | null>(null);
+  const [detourLoading, setDetourLoading] = useState(false);
+  const lastSpokenRef = useRef<string | null>(null);
+  const legAnnouncedRef = useRef<string | null>(null);
   const [route, setRoute] = useState<NextTripRoute | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
@@ -128,7 +150,10 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
   const tracker = useGpsTracker(isRunning);
   const { fix } = tracker;
   const location = useMemo(
-    () => (fix ? { latitude: fix.coordinate[0], longitude: fix.coordinate[1], accuracy: fix.accuracy } : null),
+    () =>
+      fix
+        ? { latitude: fix.coordinate[0], longitude: fix.coordinate[1], accuracy: fix.accuracy }
+        : null,
     [fix],
   );
 
@@ -141,6 +166,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
       return;
     }
     const now = Date.now();
+    // Đang rẽ tạm cây xăng: khóa tự tính lại tuyến chính để không ghi đè tuyến cây xăng
+    if (detourStop) return;
     const last = lastRequest.current;
     if (last && last.itemId === pendingStop.itemId && last.vehicle === vehicle) {
       // Đang đi đúng tuyến: không cần hỏi Goong lại
@@ -163,7 +190,9 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
         location.accuracy ?? undefined,
       )
       .then((response) => {
-        if (sequence.current === requestId) setRoute(response);
+        if (sequence.current !== requestId) return;
+        setRoute(response);
+        setSelectedRouteIndex(0);
       })
       .catch((error: unknown) => {
         if (sequence.current !== requestId) return;
@@ -173,31 +202,231 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
       .finally(() => {
         if (sequence.current === requestId) setRouteLoading(false);
       });
-  }, [isRunning, pendingStop?.itemId, location, vehicle, planId, dayNumber, rerouteVersion]);
+  }, [
+    isRunning,
+    pendingStop?.itemId,
+    location,
+    vehicle,
+    planId,
+    dayNumber,
+    rerouteVersion,
+    detourStop,
+  ]);
 
   const routeForStop = route && pendingStop && route.itemId === pendingStop.itemId ? route : null;
+
+  // Tuyến chính + các tuyến thay thế Goong trả về cho chặng hiện tại (next-route)
+  const allMainRoutes = useMemo<GoongRoute[]>(
+    () => (routeForStop ? [routeForStop.route, ...(routeForStop.route.alternatives ?? [])] : []),
+    [routeForStop],
+  );
+  const selectedMainRoute = allMainRoutes[selectedRouteIndex] ?? routeForStop?.route ?? null;
+  // Tuyến đang dẫn: tuyến tới cây xăng khi ghé tạm, ngược lại là tuyến tới điểm dừng hiện tại
+  const activeRoute: GoongRoute | null =
+    detourStop && detourRoute ? detourRoute : selectedMainRoute;
+
+  /** Tính tuyến từ vị trí hiện tại tới cây xăng; refit = căn bản đồ vừa tuyến và tạm dừng bám camera */
+  const fetchDetourRoute = async (
+    origin: Coordinate,
+    station: NearbyPlace,
+    mode: GoongVehicle,
+    refit: boolean,
+  ) => {
+    setDetourLoading(true);
+    try {
+      const result = await mapsApi.directions({
+        fromLat: origin[0],
+        fromLng: origin[1],
+        toLat: station.latitude,
+        toLng: station.longitude,
+        vehicle: mode,
+      });
+      setDetourStop(station);
+      setDetourRoute(result);
+      setShowGasPanel(false);
+      setShowRoutesPanel(false);
+      lastSpokenRef.current = null;
+      if (refit) {
+        setFollowing(false);
+        setTimeout(() => mapRef.current?.fitAll(), 180);
+      }
+    } catch (error) {
+      showToast(errorMessage(error));
+    } finally {
+      setDetourLoading(false);
+    }
+  };
+
   const destination = useMemo(
     () =>
-      pendingStop && hasCoordinate(pendingStop)
-        ? { name: pendingStop.placeName, coordinate: [pendingStop.latitude, pendingStop.longitude] as Coordinate }
-        : null,
-    [pendingStop],
+      detourStop
+        ? {
+            name: detourStop.name,
+            coordinate: [detourStop.latitude, detourStop.longitude] as Coordinate,
+          }
+        : pendingStop && hasCoordinate(pendingStop)
+          ? {
+              name: pendingStop.placeName,
+              coordinate: [pendingStop.latitude, pendingStop.longitude] as Coordinate,
+            }
+          : null,
+    [detourStop, pendingStop],
   );
   const nav = useNavigationGuidance({
-    route: routeForStop?.route ?? null,
+    route: activeRoute,
     fix,
     destination,
-    loading: routeLoading,
+    loading: routeLoading || detourLoading,
     active: isRunning && Boolean(pendingStop),
     onOffRoute: () => {
+      // Đang rẽ cây xăng: tính lại tuyến tới cây xăng (tuyến chính đang bị khóa)
+      if (detourStop && fix) {
+        void fetchDetourRoute(fix.coordinate, detourStop, vehicle, false);
+        return;
+      }
       lastRequest.current = null;
       setRerouteVersion((v) => v + 1);
     },
   });
   onRouteRef.current = nav.onRoute;
+
+  /** Mở/đóng danh sách cây xăng gần; dùng lại danh sách đã tải (cache) để mở tức thì */
+  const searchNearbyGas = async () => {
+    if (showGasPanel) {
+      setShowGasPanel(false);
+      return;
+    }
+    setShowRoutesPanel(false);
+    setShowGasPanel(true);
+    if (gasStations.length > 0) {
+      setGasError(null);
+      return;
+    }
+    const origin = fix?.coordinate;
+    if (!origin) {
+      setGasError('Chưa có vị trí GPS để tìm cây xăng gần bạn.');
+      return;
+    }
+    setGasLoading(true);
+    setGasError(null);
+    try {
+      const found = await mapsApi.nearby({
+        lat: origin[0],
+        lng: origin[1],
+        keyword: 'cây xăng',
+        radius: 5,
+      });
+      setGasStations(found);
+      if (found.length === 0) setGasError('Không tìm thấy cây xăng nào trong bán kính 5 km.');
+    } catch (error) {
+      setGasError(errorMessage(error));
+    } finally {
+      setGasLoading(false);
+    }
+  };
+
+  const selectGasStation = (station: NearbyPlace) => {
+    const origin = fix?.coordinate;
+    if (!origin) {
+      showToast('Chưa có vị trí GPS để chỉ đường tới cây xăng.');
+      return;
+    }
+    void fetchDetourRoute(origin, station, vehicle, true);
+  };
+
+  /** Bỏ rẽ tạm: quay lại dẫn đường tới điểm dừng hiện tại và mở lại tự tính tuyến (next-route) */
+  const returnToMainRoute = () => {
+    setDetourStop(null);
+    setDetourRoute(null);
+    setShowGasPanel(false);
+    setGasStations([]);
+    lastSpokenRef.current = null;
+    lastRequest.current = null;
+    setRerouteVersion((v) => v + 1);
+    if (navMode) setFollowing(true);
+  };
+
+  const chooseAlternativeRoute = (index: number) => {
+    setSelectedRouteIndex(index);
+    setShowRoutesPanel(false);
+    lastSpokenRef.current = null;
+    setFollowing(false);
+    setTimeout(() => mapRef.current?.fitAll(), 150);
+  };
+
+  const toggleRoutesPanel = () => {
+    setShowGasPanel(false);
+    if (!showRoutesPanel && navMode) {
+      setFollowing(false);
+      setTimeout(() => mapRef.current?.fitAll(), 150);
+    }
+    setShowRoutesPanel((open) => !open);
+  };
+
+  // Đổi phương tiện khi đang rẽ cây xăng: tính lại tuyến tới cây xăng (tuyến chính bị khóa)
+  useEffect(() => {
+    if (detourStop && fix) void fetchDetourRoute(fix.coordinate, detourStop, vehicle, false);
+  }, [vehicle]);
+
+  // Sang điểm dừng tiếp theo (hoặc hết điểm): bỏ rẽ tạm, trả tuyến thay thế về 0, xóa cache cây xăng
+  useEffect(() => {
+    setSelectedRouteIndex(0);
+    setShowRoutesPanel(false);
+    setDetourStop(null);
+    setDetourRoute(null);
+    setGasStations([]);
+    setGasError(null);
+    setShowGasPanel(false);
+    lastSpokenRef.current = null;
+  }, [pendingStop?.itemId]);
+
+  // Giọng đọc chỉ đường tiếng Việt theo tuyến đang dẫn (tới điểm dừng hoặc tới cây xăng)
+  useEffect(() => {
+    if (!navMode || !voiceEnabled || !isRunning || !nav.guidance || !pendingStop) return;
+    const stopKey = detourStop ? `gas:${detourStop.placeId}` : `stop:${pendingStop.itemId}`;
+    const key = `${stopKey}:${selectedRouteIndex}:${nav.guidance.icon}:${nav.guidance.text}`;
+    if (lastSpokenRef.current === key) return;
+    lastSpokenRef.current = key;
+    // Vừa chuyển sang chặng mới: đọc thông báo chuyển chặng
+    const newLeg =
+      legAnnouncedRef.current !== null && legAnnouncedRef.current !== stopKey && !detourStop;
+    legAnnouncedRef.current = stopKey;
+    const spoken = (value: string) =>
+      value.replace(/(\d)\s*km\b/g, '$1 ki lô mét').replace(/(\d)\s*m\b/g, '$1 mét');
+    const line = `${spoken(nav.guidance.title)}, ${nav.guidance.text}`;
+    speakNavigation(newLeg ? `Tiếp tục đi tới ${pendingStop.placeName}. ${line}` : line);
+  }, [navMode, voiceEnabled, isRunning, nav.guidance, pendingStop, detourStop, selectedRouteIndex]);
+
+  // Tắt loa / thoát dẫn đường / rời màn hình thì dừng đọc ngay
+  useEffect(() => {
+    if (!navMode || !voiceEnabled) {
+      stopNavigationSpeech();
+      lastSpokenRef.current = null;
+    }
+  }, [navMode, voiceEnabled]);
+  useEffect(() => () => stopNavigationSpeech(), []);
+
+  const mainLine = useMemo(
+    () =>
+      selectedMainRoute?.polyline ? decodePolyline(selectedMainRoute.polyline).map(toLatLng) : [],
+    [selectedMainRoute],
+  );
+  const gasPoints = (detourStop ? [detourStop] : showGasPanel ? gasStations : []).map(
+    (station) => ({
+      id: `gas:${station.placeId}`,
+      latitude: station.latitude,
+      longitude: station.longitude,
+      label: '⛽',
+      title: station.name,
+      color: DETOUR_COLOR,
+    }),
+  );
   const todoLine = useMemo(() => nav.parts.todo.map(toLatLng), [nav.parts.todo]);
   const doneLine = useMemo(() => nav.parts.done.map(toLatLng), [nav.parts.done]);
-  const userMarker = useMemo(() => (nav.displayLocation ? toLatLng(nav.displayLocation) : null), [nav.displayLocation]);
+  const userMarker = useMemo(
+    () => (nav.displayLocation ? toLatLng(nav.displayLocation) : null),
+    [nav.displayLocation],
+  );
 
   const startNavigation = () => {
     setNavMode(true);
@@ -225,6 +454,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
           ? '#9AA9B3'
           : undefined,
   }));
+
+  const displayPoints = [...mapPoints, ...gasPoints];
 
   const startDay = async () => {
     if (busy) return;
@@ -337,13 +568,34 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View style={navMode ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } : { height: '42%' }}>
+      <View
+        style={
+          navMode
+            ? { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }
+            : { height: '42%' }
+        }
+      >
         <PlacesMap
           ref={mapRef}
-          points={mapPoints}
-          activeId={pendingStop ? String(pendingStop.itemId) : null}
+          points={displayPoints}
+          activeId={
+            detourStop
+              ? `gas:${detourStop.placeId}`
+              : pendingStop
+                ? String(pendingStop.itemId)
+                : null
+          }
           route={todoLine}
           doneRoute={doneLine}
+          secondaryRoute={detourStop ? mainLine : undefined}
+          routeColor={detourStop ? DETOUR_COLOR : undefined}
+          satellite={satellite}
+          fitBottomPadding={navMode ? 120 : undefined}
+          onSelect={(id) => {
+            if (!id.startsWith('gas:')) return;
+            const station = gasStations.find((item) => item.placeId === id.slice(4));
+            if (station) selectGasStation(station);
+          }}
           userLocation={userMarker}
           userHeading={fix?.heading ?? null}
           userAccuracy={fix?.accuracy ?? null}
@@ -360,7 +612,11 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
               : undefined
           }
         />
-        <SafeAreaView edges={['top']} pointerEvents="box-none" style={{ position: 'absolute', top: 0, left: 0, right: 0 }}>
+        <SafeAreaView
+          edges={['top']}
+          pointerEvents="box-none"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+        >
           <View className="flex-row items-center gap-2 px-3 pt-2">
             <IconButton icon="close" label="Đóng bản đồ" onPress={exit} background="#FFFFFF" />
             <View style={shadow.card} className="flex-1 rounded-full bg-white px-4 py-2">
@@ -383,10 +639,18 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
             />
           </View>
           {picking ? (
-            <View style={shadow.raised} className="mx-3 mt-2 flex-row items-center gap-3 rounded-2xl bg-[#13364A] px-4 py-3">
+            <View
+              style={shadow.raised}
+              className="mx-3 mt-2 flex-row items-center gap-3 rounded-2xl bg-[#13364A] px-4 py-3"
+            >
               <Icon name="place" size={26} color="#FFFFFF" />
-              <Text className="flex-1 text-[13px] font-bold leading-[18px] text-white">Chạm lên bản đồ để chọn vị trí của bạn</Text>
-              <Pressable onPress={() => setPicking(false)} className="rounded-full bg-white/20 px-3 py-1.5">
+              <Text className="flex-1 text-[13px] font-bold leading-[18px] text-white">
+                Chạm lên bản đồ để chọn vị trí của bạn
+              </Text>
+              <Pressable
+                onPress={() => setPicking(false)}
+                className="rounded-full bg-white/20 px-3 py-1.5"
+              >
                 <Text className="text-[11px] font-extrabold text-white">Hủy</Text>
               </Pressable>
             </View>
@@ -394,19 +658,213 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
             <View
               style={shadow.raised}
               className={`mx-3 mt-2 flex-row items-center gap-3 rounded-2xl px-4 py-3 ${
-                nav.guidance.icon === 'alt-route' ? 'bg-[#B45309]' : nav.arrived ? 'bg-[#13936B]' : 'bg-[#13364A]'
+                nav.guidance.icon === 'alt-route'
+                  ? 'bg-[#B45309]'
+                  : nav.arrived
+                    ? 'bg-[#13936B]'
+                    : 'bg-[#1A73E8]'
               }`}
             >
               <Icon name={nav.guidance.icon as IconName} size={36} color="#FFFFFF" />
               <View className="min-w-0 flex-1">
-                <Text className="text-[19px] font-extrabold leading-[23px] text-white">{nav.guidance.title}</Text>
-                <Text numberOfLines={2} className="mt-0.5 text-[12.5px] font-semibold leading-[17px] text-white/90">
+                <Text className="text-[19px] font-extrabold leading-[23px] text-white">
+                  {nav.guidance.title}
+                </Text>
+                <Text
+                  numberOfLines={2}
+                  className="mt-0.5 text-[12.5px] font-semibold leading-[17px] text-white/90"
+                >
                   {nav.guidance.text}
                 </Text>
               </View>
             </View>
           ) : null}
         </SafeAreaView>
+
+        {detourStop && navMode ? (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              left: 12,
+              right: 12,
+              bottom: BAR_HEIGHT + bottomInset + 10,
+            }}
+          >
+            <View style={shadow.raised} className="rounded-2xl bg-[#EA580C] px-4 py-3">
+              <View className="flex-row items-center gap-2">
+                <Icon name="local-gas-station" size={22} color="#FFFFFF" />
+                <Text numberOfLines={1} className="flex-1 text-[13px] font-extrabold text-white">
+                  Đang tới {detourStop.name}
+                </Text>
+              </View>
+              <View className="mt-2 flex-row gap-2">
+                <Pressable
+                  onPress={() => {
+                    setShowRoutesPanel(false);
+                    setShowGasPanel(true);
+                  }}
+                  className="flex-1 items-center rounded-xl bg-white/20 py-2"
+                >
+                  <Text className="text-[12px] font-extrabold text-white">Đổi cây xăng</Text>
+                </Pressable>
+                <Pressable
+                  onPress={returnToMainRoute}
+                  className="flex-[1.4] items-center rounded-xl bg-white py-2"
+                >
+                  <Text
+                    numberOfLines={1}
+                    className="px-1 text-[12px] font-extrabold text-[#EA580C]"
+                  >
+                    Về tuyến đi {pendingStop?.placeName ?? 'điểm dừng'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {navMode && (showGasPanel || showRoutesPanel) ? (
+          <View
+            style={[
+              shadow.raised,
+              {
+                position: 'absolute',
+                left: 12,
+                right: 12,
+                bottom: BAR_HEIGHT + bottomInset + (detourStop ? 112 : 10),
+                maxHeight: 220,
+              },
+            ]}
+            className="rounded-2xl bg-white p-3"
+          >
+            <Text className="mb-2 text-[13px] font-extrabold text-[#13364A]">
+              {showGasPanel ? 'Cây xăng gần bạn' : 'Tuyến đường thay thế'}
+            </Text>
+            {showGasPanel ? (
+              gasLoading ? (
+                <Text className="text-[12px] text-[#72818C]">Đang tìm cây xăng…</Text>
+              ) : gasError ? (
+                <Text className="text-[12px] text-[#B42318]">{gasError}</Text>
+              ) : (
+                <ScrollView>
+                  {gasStations.map((station) => (
+                    <Pressable
+                      key={station.placeId}
+                      onPress={() => selectGasStation(station)}
+                      className="flex-row items-center gap-2 border-b border-[#EEF2F5] py-2"
+                    >
+                      <Icon name="local-gas-station" size={18} color={DETOUR_COLOR} />
+                      <View className="min-w-0 flex-1">
+                        <Text numberOfLines={1} className="text-[12.5px] font-bold text-[#13364A]">
+                          {station.name}
+                        </Text>
+                        <Text numberOfLines={1} className="text-[11px] text-[#72818C]">
+                          {station.address}
+                        </Text>
+                      </View>
+                      <Text className="text-[11.5px] font-bold text-[#EA580C]">
+                        {formatMeters(station.distanceMeters)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )
+            ) : (
+              <ScrollView>
+                {allMainRoutes.map((item, index) => (
+                  <Pressable
+                    key={index}
+                    onPress={() => chooseAlternativeRoute(index)}
+                    className={`mb-1.5 rounded-xl px-3 py-2 ${index === selectedRouteIndex ? 'bg-[#DCF5F8]' : 'bg-[#F4F7F9]'}`}
+                  >
+                    <Text className="text-[12.5px] font-extrabold text-[#13364A]">
+                      {index === 0 ? 'Tuyến đề xuất' : `Tuyến thay thế ${index}`}
+                    </Text>
+                    <Text className="text-[11.5px] text-[#557080]">
+                      {item.distanceText ?? formatDistance(item.distanceMeters)} ·{' '}
+                      {item.durationText ?? formatDurationSeconds(item.durationSeconds)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        ) : null}
+
+        {navMode ? (
+          <View
+            pointerEvents="box-none"
+            style={{ position: 'absolute', right: 12, top: 150, gap: 10 }}
+          >
+            <IconButton
+              icon="layers"
+              label={satellite ? 'Bản đồ mặc định' : 'Ảnh vệ tinh'}
+              background={satellite ? colors.primary : '#FFFFFF'}
+              color={satellite ? '#FFFFFF' : '#13364A'}
+              onPress={() => setSatellite((value) => !value)}
+            />
+            <IconButton
+              icon={voiceEnabled ? 'volume-up' : 'volume-off'}
+              label={voiceEnabled ? 'Tắt giọng đọc' : 'Bật giọng đọc'}
+              background={voiceEnabled ? colors.primary : '#FFFFFF'}
+              color={voiceEnabled ? '#FFFFFF' : '#13364A'}
+              onPress={() => setVoiceEnabled((value) => !value)}
+            />
+            <IconButton
+              icon="local-gas-station"
+              label="Cây xăng gần"
+              background={showGasPanel || detourStop ? DETOUR_COLOR : '#FFFFFF'}
+              color={showGasPanel || detourStop ? '#FFFFFF' : '#13364A'}
+              onPress={() => void searchNearbyGas()}
+            />
+            {!detourStop && allMainRoutes.length > 1 ? (
+              <IconButton
+                icon="alt-route"
+                label="Đổi tuyến"
+                background={showRoutesPanel ? colors.primary : '#FFFFFF'}
+                color={showRoutesPanel ? '#FFFFFF' : '#13364A'}
+                onPress={toggleRoutesPanel}
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        {navMode ? (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              bottom:
+                BAR_HEIGHT +
+                bottomInset +
+                (detourStop ? 118 : showGasPanel || showRoutesPanel ? 236 : 12),
+            }}
+          >
+            <Pressable
+              onPress={() => {
+                if (following) {
+                  setFollowing(false);
+                  mapRef.current?.fitAll();
+                } else {
+                  setFollowing(true);
+                  setShowGasPanel(false);
+                  setShowRoutesPanel(false);
+                }
+              }}
+              style={shadow.raised}
+              className="flex-row items-center gap-1.5 rounded-full bg-white px-4 py-2"
+            >
+              <Icon name={following ? 'zoom-out-map' : 'navigation'} size={16} color="#13364A" />
+              <Text className="text-[12.5px] font-extrabold text-[#13364A]">
+                {following ? 'Toàn tuyến' : 'Tiếp tục bám theo'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       <ScrollView
@@ -492,7 +950,12 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
         {isRunning && tracker.manual ? (
           <View className="mt-3">
             <Notice tone="info">Đang dùng vị trí bạn chọn trên bản đồ.</Notice>
-            <Button title="Dùng GPS thật" variant="outline" size="sm" onPress={tracker.clearManual} />
+            <Button
+              title="Dùng GPS thật"
+              variant="outline"
+              size="sm"
+              onPress={tracker.clearManual}
+            />
           </View>
         ) : null}
 
@@ -546,13 +1009,18 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
                     <Text className="text-[11px] text-[#557080]">Còn lại</Text>
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
-                      {nav.remaining ? formatMeters(nav.remaining.meters) : (route.route.distanceText ?? formatDistance(route.route.distanceMeters))}
+                      {nav.remaining
+                        ? formatMeters(nav.remaining.meters)
+                        : (route.route.distanceText ?? formatDistance(route.route.distanceMeters))}
                     </Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
                     <Text className="text-[11px] text-[#557080]">Thời gian</Text>
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
-                      {nav.remaining ? formatSeconds(nav.remaining.seconds) : (route.route.durationText ?? formatDurationSeconds(route.route.durationSeconds))}
+                      {nav.remaining
+                        ? formatSeconds(nav.remaining.seconds)
+                        : (route.route.durationText ??
+                          formatDurationSeconds(route.route.durationSeconds))}
                     </Text>
                   </View>
                 </View>
@@ -668,7 +1136,17 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
       {navMode ? (
         <View
-          style={[shadow.raised, { position: 'absolute', left: 0, right: 0, bottom: 0, height: BAR_HEIGHT + bottomInset, paddingBottom: bottomInset }]}
+          style={[
+            shadow.raised,
+            {
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: BAR_HEIGHT + bottomInset,
+              paddingBottom: bottomInset,
+            },
+          ]}
           className="rounded-t-3xl bg-white px-4 pt-3"
         >
           <View className="flex-row items-center gap-2.5">
@@ -702,7 +1180,13 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
               color={colors.primary}
               onPress={() => setSheetOpen((open) => !open)}
             />
-            <IconButton icon="logout" label="Thoát dẫn đường" background={colors.dangerSoft} color={colors.danger} onPress={stopNavigation} />
+            <IconButton
+              icon="logout"
+              label="Thoát dẫn đường"
+              background={colors.dangerSoft}
+              color={colors.danger}
+              onPress={stopNavigation}
+            />
           </View>
         </View>
       ) : null}
