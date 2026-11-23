@@ -6,12 +6,22 @@ import {
   Marker,
   type CameraRef,
   type LngLat,
+  type PressEvent,
   type StyleSpecification,
+  type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import { LogBox, View, type StyleProp, type ViewStyle } from 'react-native';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import {
+  LogBox,
+  View,
+  type NativeSyntheticEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { colors } from '../theme';
+import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Typography';
+import { circleRing, distanceBetween } from '../utils/navGeo';
 
 // MapLibre Native tự hủy request tile cũ khi zoom/pan nhanh — chỉ là log thông tin, không phải lỗi
 LogBox.ignoreLogs(['MapLibre Native [WARN]']);
@@ -106,9 +116,21 @@ export const hasCoordinate = <T extends { latitude: number | null; longitude: nu
 const zoomFor = (delta: number) =>
   Math.min(18, Math.max(3, Math.log2(360 / Math.max(delta, 0.0005))));
 
+const lineFeature = (list?: LatLng[]): GeoJSON.Feature | null =>
+  list && list.length > 1
+    ? {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: list.map((p) => [p.longitude, p.latitude]),
+        },
+      }
+    : null;
+
 /**
  * Bản đồ các địa điểm có ghim đánh số — bản mobile của TravelMap trên web: MapLibre + nền Goong,
- * không cần khoá Google Maps.
+ * hỗ trợ chế độ vệ tinh, tuyến phụ (detour/alternatives), mũi tên la bàn 3D và vòng sai số GPS.
  */
 const PlacesMap = forwardRef<
   PlacesMapHandle,
@@ -116,20 +138,30 @@ const PlacesMap = forwardRef<
     points: MapPoint[];
     activeId?: string | null;
     onSelect?: (id: string) => void;
+    /** Phần tuyến còn phải đi (hoặc cả tuyến khi chưa bám tuyến) */
     route?: LatLng[];
-    /** Tuyến chính vẽ mờ phía sau khi đang rẽ tạm (vd. ghé cây xăng) */
+    /** Phần tuyến đã đi — vẽ màu xám */
+    doneRoute?: LatLng[];
+    /** Tuyến chính vẽ mờ phía sau khi đang rẽ tạm (vd. ghé cây xăng) hoặc tuyến thay thế */
     secondaryRoute?: LatLng[];
     /** Màu tuyến đang dẫn đường (mặc định xanh chủ đạo) */
     routeColor?: string;
     userLocation?: LatLng | null;
+    /** Hướng đi (độ từ hướng Bắc) để vẽ mũi tên chỉ hướng */
+    userHeading?: number | null;
+    /** Sai số GPS (mét) để vẽ vòng tròn quanh vị trí */
+    userAccuracy?: number | null;
     style?: StyleProp<ViewStyle>;
+    /** Camera bám theo vị trí, xoay theo hướng đi (kiểu Google Maps) */
     followUser?: boolean;
     /** Bật chế độ ảnh vệ tinh (Satellite) */
     satellite?: boolean;
     /** Khoảng đệm đáy khi fitBounds để tuyến không bị thanh dưới che mất */
     fitBottomPadding?: number;
-    /** Gọi khi người dùng tự kéo/zoom bản đồ */
+    /** Người dùng tự kéo/xoay/zoom bản đồ → thường dùng để tắt followUser */
     onUserInteract?: () => void;
+    /** Khi có: bấm lên bản đồ trả về tọa độ (chọn vị trí xuất phát thủ công) */
+    onPick?: (latitude: number, longitude: number) => void;
   }
 >(function PlacesMap(
   {
@@ -137,21 +169,27 @@ const PlacesMap = forwardRef<
     activeId,
     onSelect,
     route,
+    doneRoute,
     secondaryRoute,
     routeColor,
     userLocation,
+    userHeading,
+    userAccuracy,
     style,
     followUser,
     satellite,
     fitBottomPadding = 60,
     onUserInteract,
+    onPick,
   },
   ref,
 ) {
   const cameraRef = useRef<CameraRef>(null);
+  const [bearing, setBearing] = useState(0);
+  const bearingRef = useRef(0);
 
   const coordinates = useMemo(() => {
-    // Khi đã có tuyến đường thì ưu tiên căn khung nhìn theo đúng tuyến đang đi (+ vị trí GPS),
+    // Khi đã có tuyến đường thì ưu tiên căn khung nhìn theo đúng tuyến đang đi (+ vị trí GPS gần),
     // tránh bị các ghim khác ở xa (vd. điểm chính cách 200km khi đang rẽ cây xăng) kéo zoom ra ngoài.
     if (route && route.length > 1) {
       const list: LngLat[] = route.map((p): LngLat => [p.longitude, p.latitude]);
@@ -159,7 +197,17 @@ const PlacesMap = forwardRef<
       return list;
     }
     const list: LngLat[] = points.map((p) => [p.longitude, p.latitude]);
-    if (userLocation) list.push([userLocation.longitude, userLocation.latitude]);
+    // Vị trí người dùng chỉ đưa vào khung nhìn khi ở gần điểm (≤ 30 km) — tránh GPS sai kéo bản đồ ra nước ngoài
+    if (userLocation) {
+      const anchor = points[0];
+      const near =
+        !anchor ||
+        distanceBetween(
+          [anchor.latitude, anchor.longitude],
+          [userLocation.latitude, userLocation.longitude],
+        ) <= 30_000;
+      if (near) list.push([userLocation.longitude, userLocation.latitude]);
+    }
     return list;
   }, [points, userLocation, route]);
 
@@ -167,13 +215,15 @@ const PlacesMap = forwardRef<
     const camera = cameraRef.current;
     if (!camera || coordinates.length === 0) return;
     if (coordinates.length === 1) {
-      camera.easeTo({ center: coordinates[0], zoom: 14, duration: 350 });
+      camera.easeTo({ center: coordinates[0], zoom: 14, bearing: 0, pitch: 0, duration: 350 });
       return;
     }
     const lngs = coordinates.map((c) => c[0]);
     const lats = coordinates.map((c) => c[1]);
     camera.fitBounds([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)], {
       padding: { top: 70, right: 55, bottom: fitBottomPadding, left: 55 },
+      bearing: 0,
+      pitch: 0,
       duration: 350,
     });
   };
@@ -196,121 +246,180 @@ const PlacesMap = forwardRef<
     return () => clearTimeout(timer);
   }, [signature]);
 
-  const secondaryRouteShape = useMemo<GeoJSON.Feature | null>(
+  // Chế độ bám theo: camera đi theo vị trí và xoay theo hướng di chuyển
+  useEffect(() => {
+    if (!followUser || !userLocation) return;
+    cameraRef.current?.easeTo({
+      center: [userLocation.longitude, userLocation.latitude],
+      zoom: 17,
+      pitch: 45,
+      bearing: typeof userHeading === 'number' ? userHeading : bearingRef.current,
+      duration: 700,
+    });
+  }, [followUser, userLocation?.latitude, userLocation?.longitude, userHeading]);
+
+  const routeShape = useMemo(() => lineFeature(route), [route]);
+  const doneShape = useMemo(() => lineFeature(doneRoute), [doneRoute]);
+  const secondaryRouteShape = useMemo(() => lineFeature(secondaryRoute), [secondaryRoute]);
+
+  const accuracyShape = useMemo<GeoJSON.Feature | null>(
     () =>
-      secondaryRoute && secondaryRoute.length > 1
+      userLocation && typeof userAccuracy === 'number' && userAccuracy >= 15
         ? {
             type: 'Feature',
             properties: {},
             geometry: {
-              type: 'LineString',
-              coordinates: secondaryRoute.map((p) => [p.longitude, p.latitude]),
+              type: 'Polygon',
+              coordinates: [
+                circleRing(
+                  [userLocation.latitude, userLocation.longitude],
+                  Math.min(userAccuracy, 500),
+                ),
+              ],
             },
           }
         : null,
-    [secondaryRoute],
+    [userLocation, userAccuracy],
   );
 
-  const routeShape = useMemo<GeoJSON.Feature | null>(
-    () =>
-      route && route.length > 1
-        ? {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: route.map((p) => [p.longitude, p.latitude]),
-            },
-          }
-        : null,
-    [route],
-  );
+  const hasHeading = typeof userHeading === 'number';
 
   return (
-    <View
+    <Map
       style={[{ flex: 1 }, style]}
-      onTouchMove={() => {
-        if (followUser) onUserInteract?.();
+      mapStyle={satellite ? SATELLITE_STYLE : MAP_STYLE}
+      logo={false}
+      attribution={false}
+      compass={false}
+      onDidFinishLoadingMap={fitAll}
+      onPress={
+        onPick
+          ? (event: NativeSyntheticEvent<PressEvent>) => {
+              const [lng, lat] = event.nativeEvent.lngLat;
+              onPick(lat, lng);
+            }
+          : undefined
+      }
+      onRegionWillChange={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+        if (event.nativeEvent.userInteraction) onUserInteract?.();
+      }}
+      onRegionDidChange={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+        bearingRef.current = event.nativeEvent.bearing;
+        setBearing(Math.round(event.nativeEvent.bearing));
       }}
     >
-      <Map
-        style={{ flex: 1 }}
-        mapStyle={satellite ? SATELLITE_STYLE : MAP_STYLE}
-        logo={false}
-        attribution={false}
-        compass={false}
-        onDidFinishLoadingMap={fitAll}
-      >
-        <Camera
-          ref={cameraRef}
-          initialViewState={{
-            center: coordinates[0] ?? VIETNAM_CENTER,
-            zoom: coordinates[0] ? 12 : 4.5,
-          }}
-        />
+      <Camera
+        ref={cameraRef}
+        initialViewState={{
+          center: coordinates[0] ?? VIETNAM_CENTER,
+          zoom: coordinates[0] ? 12 : 4.5,
+        }}
+      />
 
-        {secondaryRouteShape ? (
-          <GeoJSONSource id="secondary-route" data={secondaryRouteShape}>
-            <Layer
-              id="secondary-route-line"
-              type="line"
-              paint={{ 'line-color': '#94A3B8', 'line-width': 4, 'line-opacity': 0.55 }}
-              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            />
-          </GeoJSONSource>
-        ) : null}
+      {accuracyShape ? (
+        <GeoJSONSource id="accuracy" data={accuracyShape}>
+          <Layer
+            id="accuracy-fill"
+            type="fill"
+            paint={{ 'fill-color': '#2563EB', 'fill-opacity': 0.12 }}
+          />
+        </GeoJSONSource>
+      ) : null}
 
-        {routeShape ? (
-          <GeoJSONSource id="route" data={routeShape}>
-            <Layer
-              id="route-casing"
-              type="line"
-              paint={{ 'line-color': '#FFFFFF', 'line-width': 8, 'line-opacity': 0.9 }}
-              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            />
-            <Layer
-              id="route-line"
-              type="line"
-              paint={{ 'line-color': routeColor ?? colors.primary, 'line-width': 5 }}
-              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            />
-          </GeoJSONSource>
-        ) : null}
+      {secondaryRouteShape ? (
+        <GeoJSONSource id="secondary-route" data={secondaryRouteShape}>
+          <Layer
+            id="secondary-route-line"
+            type="line"
+            paint={{ 'line-color': '#94A3B8', 'line-width': 4, 'line-opacity': 0.55 }}
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          />
+        </GeoJSONSource>
+      ) : null}
 
-        {points.map((point) => {
-          const active = point.id === activeId;
-          return (
-            <Marker
-              key={point.id}
-              id={point.id}
-              lngLat={[point.longitude, point.latitude]}
-              anchor="center"
-              onPress={() => onSelect?.(point.id)}
+      {routeShape ? (
+        <GeoJSONSource id="route" data={routeShape}>
+          <Layer
+            id="route-casing"
+            type="line"
+            paint={{ 'line-color': '#FFFFFF', 'line-width': 9, 'line-opacity': 0.9 }}
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          />
+          <Layer
+            id="route-line"
+            type="line"
+            paint={{ 'line-color': routeColor ?? colors.primary, 'line-width': 6 }}
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          />
+        </GeoJSONSource>
+      ) : null}
+
+      {doneShape ? (
+        <GeoJSONSource id="route-done" data={doneShape}>
+          <Layer
+            id="route-done-line"
+            type="line"
+            paint={{ 'line-color': '#9AA9B3', 'line-width': 6 }}
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          />
+        </GeoJSONSource>
+      ) : null}
+
+      {points.map((point) => {
+        const active = point.id === activeId;
+        return (
+          <Marker
+            key={point.id}
+            id={point.id}
+            lngLat={[point.longitude, point.latitude]}
+            anchor="center"
+            onPress={() => onSelect?.(point.id)}
+          >
+            <View
+              accessibilityLabel={point.title}
+              style={{
+                minWidth: active ? 34 : 28,
+                height: active ? 34 : 28,
+                borderRadius: 17,
+                paddingHorizontal: 4,
+                backgroundColor: active ? colors.ink : (point.color ?? colors.primary),
+                borderWidth: 2.5,
+                borderColor: '#FFFFFF',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
             >
-              <View
-                accessibilityLabel={point.title}
-                style={{
-                  minWidth: active ? 34 : 28,
-                  height: active ? 34 : 28,
-                  borderRadius: 17,
-                  paddingHorizontal: 4,
-                  backgroundColor: active ? colors.ink : (point.color ?? colors.primary),
-                  borderWidth: 2.5,
-                  borderColor: '#FFFFFF',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
-                  {point.label ?? '•'}
-                </Text>
-              </View>
-            </Marker>
-          );
-        })}
+              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+                {point.label ?? '•'}
+              </Text>
+            </View>
+          </Marker>
+        );
+      })}
 
-        {userLocation ? (
-          <Marker id="me" lngLat={[userLocation.longitude, userLocation.latitude]} anchor="center">
+      {userLocation ? (
+        <Marker id="me" lngLat={[userLocation.longitude, userLocation.latitude]} anchor="center">
+          {hasHeading ? (
+            <View
+              accessibilityLabel="Vị trí của bạn"
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                backgroundColor: '#2563EB',
+                borderWidth: 3,
+                borderColor: '#FFFFFF',
+                alignItems: 'center',
+                justifyContent: 'center',
+                // Mũi tên chỉ hướng, bù góc xoay hiện tại của bản đồ
+                transform: [
+                  { rotate: `${((((userHeading as number) - bearing) % 360) + 360) % 360}deg` },
+                ],
+              }}
+            >
+              <Icon name="navigation" size={18} color="#FFFFFF" />
+            </View>
+          ) : (
             <View
               accessibilityLabel="Vị trí của bạn"
               style={{
@@ -322,10 +431,10 @@ const PlacesMap = forwardRef<
                 borderColor: '#FFFFFF',
               }}
             />
-          </Marker>
-        ) : null}
-      </Map>
-    </View>
+          )}
+        </Marker>
+      ) : null}
+    </Map>
   );
 });
 
