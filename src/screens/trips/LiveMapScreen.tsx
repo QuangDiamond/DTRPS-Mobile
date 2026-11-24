@@ -40,7 +40,6 @@ const DETOUR_COLOR = '#EA580C';
 const VEHICLES: { value: GoongVehicle; label: string }[] = [
   { value: 'car', label: 'Ô tô' },
   { value: 'bike', label: 'Xe máy' },
-  { value: 'taxi', label: 'Taxi' },
 ];
 
 /** Khoảng cách đường chim bay (mét) */
@@ -707,8 +706,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
       <View
         style={
           navMode
-            ? { flex: 1, position: 'relative', backgroundColor: '#E8F3F5' }
-            : { height: '42%', position: 'relative' }
+            ? { flex: 1, position: 'relative', backgroundColor: '#E8F3F5', overflow: 'hidden' }
+            : { height: '42%', position: 'relative', backgroundColor: '#E8F3F5', overflow: 'hidden' }
         }
       >
         <PlacesMap
@@ -1061,7 +1060,14 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                 borderTopColor: '#E5ECEF',
                 display: sheetOpen ? 'flex' : 'none',
               }
-            : { flex: 1, backgroundColor: colors.bg }
+            : {
+                flex: 1,
+                backgroundColor: colors.bg,
+                borderTopWidth: 1,
+                borderTopColor: '#E5ECEF',
+                zIndex: 2,
+                elevation: 2,
+              }
         }
         contentContainerStyle={{ padding: 16, paddingBottom: navMode ? 16 : 32 + insets.bottom }}
       >
@@ -1183,15 +1189,60 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                 <Notice tone="danger">{routeError}</Notice>
               </View>
             ) : null}
-            {route ? (
+            {activeRoute ? (
               <View className="mt-3">
+                {!detourStop && allMainRoutes.length > 1 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingBottom: 10 }}
+                  >
+                    {allMainRoutes.map((item, idx) => {
+                      const active = idx === selectedRouteIndex;
+                      const diffMin = Math.round(
+                        (item.durationSeconds - allMainRoutes[0].durationSeconds) / 60,
+                      );
+                      return (
+                        <Pressable
+                          key={idx}
+                          onPress={() => chooseAlternativeRoute(idx)}
+                          className={`rounded-2xl border px-3 py-2 ${
+                            active
+                              ? 'border-[#0891B2] bg-[#ECFEFF]'
+                              : 'border-[#E5ECEF] bg-[#F8FAFC]'
+                          }`}
+                        >
+                          <Text
+                            className={`text-[11px] font-bold ${
+                              active ? 'text-[#0E7490]' : 'text-[#557080]'
+                            }`}
+                          >
+                            {idx === 0 ? 'Tuyến nhanh nhất' : `Tuyến ${idx + 1}`}
+                          </Text>
+                          <Text className="mt-0.5 text-[13px] font-extrabold text-[#13364A]">
+                            {item.durationText || formatDurationSeconds(item.durationSeconds)}
+                          </Text>
+                          <Text className="text-[11px] text-[#72818C]">
+                            {item.distanceText || formatDistance(item.distanceMeters)}
+                            {idx > 0 && diffMin > 0
+                              ? ` (+${diffMin}p)`
+                              : idx > 0 && diffMin < 0
+                                ? ` (${diffMin}p)`
+                                : ''}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
+
                 <View className="flex-row gap-3">
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
                     <Text className="text-[11px] text-[#557080]">Còn lại</Text>
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
                       {nav.remaining
                         ? formatMeters(nav.remaining.meters)
-                        : (route.route.distanceText ?? formatDistance(route.route.distanceMeters))}
+                        : (activeRoute.distanceText ?? formatDistance(activeRoute.distanceMeters))}
                     </Text>
                   </View>
                   <View className="flex-1 rounded-2xl bg-[#ECFEFF] p-3">
@@ -1199,27 +1250,28 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                     <Text className="text-[16px] font-extrabold text-[#0E7490]">
                       {nav.remaining
                         ? formatSeconds(nav.remaining.seconds)
-                        : (route.route.durationText ??
-                          formatDurationSeconds(route.route.durationSeconds))}
+                        : (activeRoute.durationText ??
+                          formatDurationSeconds(activeRoute.durationSeconds))}
                     </Text>
                   </View>
                 </View>
-                {route.arrived || nav.arrived ? (
+                {route?.arrived || nav.arrived ? (
                   <View className="mt-2.5">
                     <Notice tone="success">
-                      Bạn đã ở gần {route.placeName}. Bấm “Đã đến” khi tham quan xong.
+                      Bạn đã ở gần {route?.placeName ?? pendingStop.placeName}. Bấm “Đã đến” khi tham
+                      quan xong.
                     </Notice>
                   </View>
                 ) : null}
-                {route.lowAccuracy ? (
+                {route?.lowAccuracy ? (
                   <View className="mt-2.5">
                     <Notice tone="warning">Sai số GPS lớn, vị trí chỉ mang tính tham khảo.</Notice>
                   </View>
                 ) : null}
-                {(route.route.steps ?? []).length > 0 ? (
+                {(activeRoute.steps ?? []).length > 0 ? (
                   <View className="mt-3 gap-2">
-                    {(route.route.steps ?? []).slice(0, 6).map((step, index) => (
-                      <View key={index} className="flex-row gap-2.5">
+                    {(activeRoute.steps ?? []).slice(0, 6).map((step, index) => (
+                      <View key={`${selectedRouteIndex}-${index}`} className="flex-row gap-2.5">
                         <View className="h-6 w-6 items-center justify-center rounded-full bg-[#DCF5F8]">
                           <Text className="text-[10.5px] font-extrabold text-[#0E7490]">
                             {index + 1}

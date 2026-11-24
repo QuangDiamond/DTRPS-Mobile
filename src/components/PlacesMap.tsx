@@ -245,6 +245,7 @@ const PlacesMap = forwardRef<
   const [bearing, setBearing] = useState(0);
   const bearingRef = useRef(0);
   const centerRef = useRef<LngLat>(VIETNAM_CENTER);
+  const zoomRef = useRef(12);
 
   const coordinates = useMemo(() => {
     // Khi đã có tuyến đường thì ưu tiên căn khung nhìn theo đúng tuyến đang đi (+ vị trí GPS gần),
@@ -388,6 +389,42 @@ const PlacesMap = forwardRef<
     });
   };
 
+  const handleMapPress = (event: NativeSyntheticEvent<PressEvent>) => {
+    const [lng, lat] = event.nativeEvent.lngLat;
+    if (onPick) {
+      onPick(lat, lng);
+      return;
+    }
+    // Chạm trực tiếp vào sợi đường xanh mờ trên bản đồ để đổi tuyến giống Google Maps.
+    if (!onSelectRouteOption || !routeOptions || routeOptions.length < 2) return;
+
+    const metersPerPixel =
+      (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoomRef.current);
+    const hitRadiusMeters = Math.max(35, metersPerPixel * 28);
+    const tapped: [number, number] = [lat, lng];
+
+    let bestIndex: number | null = null;
+    let bestDist = hitRadiusMeters;
+
+    for (const opt of routeOptions) {
+      if (opt.selected || opt.coordinates.length < 2) continue;
+      // Duyệt lấy mẫu dày để vừa mượt vừa chính xác
+      const step = Math.max(1, Math.floor(opt.coordinates.length / 180));
+      for (let i = 0; i < opt.coordinates.length; i += step) {
+        const pt = opt.coordinates[i];
+        const d = distanceBetween(tapped, [pt.latitude, pt.longitude]);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIndex = opt.index;
+        }
+      }
+    }
+
+    if (bestIndex !== null) {
+      onSelectRouteOption(bestIndex);
+    }
+  };
+
   return (
     <View style={[{ flex: 1, position: 'relative' }, style]}>
       <Map
@@ -398,11 +435,8 @@ const PlacesMap = forwardRef<
         compass={false}
         onDidFinishLoadingMap={fitAll}
         onPress={
-          onPick
-            ? (event: NativeSyntheticEvent<PressEvent>) => {
-                const [lng, lat] = event.nativeEvent.lngLat;
-                onPick(lat, lng);
-              }
+          onPick || (onSelectRouteOption && routeOptions && routeOptions.length > 1)
+            ? handleMapPress
             : undefined
         }
         onRegionWillChange={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
@@ -411,11 +445,13 @@ const PlacesMap = forwardRef<
         onRegionIsChanging={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
           bearingRef.current = event.nativeEvent.bearing;
           centerRef.current = event.nativeEvent.center;
+          zoomRef.current = event.nativeEvent.zoom;
           setBearing(Math.round(event.nativeEvent.bearing));
         }}
         onRegionDidChange={(event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
           bearingRef.current = event.nativeEvent.bearing;
           centerRef.current = event.nativeEvent.center;
+          zoomRef.current = event.nativeEvent.zoom;
           setBearing(Math.round(event.nativeEvent.bearing));
         }}
       >
