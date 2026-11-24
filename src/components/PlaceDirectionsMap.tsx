@@ -11,7 +11,11 @@ import { Icon, type IconName } from '../ui/Icon';
 import { Text } from '../ui/Typography';
 import { setNavigationLockScreen } from '../utils/lockScreen';
 import { buildStepSpeech, speakNavigation, stopNavigationSpeech } from '../utils/voiceGuidance';
-import PlacesMap, { type MapPoint, type PlacesMapHandle } from './PlacesMap';
+import PlacesMap, {
+  type MapPoint,
+  type PlacesMapHandle,
+  type RouteOptionOverlay,
+} from './PlacesMap';
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -498,6 +502,38 @@ export default function PlaceDirectionsMap({
     vehicle,
   ]);
 
+  // Khi mở khay cây xăng và đã có danh sách → tạm dừng bám GPS & zoom cận vừa khít các cây xăng quanh bạn
+  useEffect(() => {
+    if (!showGasPanel || gasStations.length === 0) return;
+    if (navigating) pauseCamera();
+    const targets: LatLng[] = gasStations.map((s) => ({
+      latitude: s.latitude,
+      longitude: s.longitude,
+    }));
+    if (userLocation) targets.push(userLocation);
+    const timer = setTimeout(() => modalMapRef.current?.fitPoints(targets), 380);
+    return () => clearTimeout(timer);
+  }, [gasStations, navigating, pauseCamera, showGasPanel, userLocation]);
+
+  // Danh sách toàn bộ tuyến (đang chọn + thay thế) kèm nhãn thời gian để vẽ đồng thời giống Google Maps
+  const routeOptionOverlays = useMemo<RouteOptionOverlay[] | undefined>(() => {
+    if (detourStop || allMainRoutes.length < 2) return undefined;
+    // Khi đang bám GPS cận cảnh thì ẩn nhãn để đỡ rối; hiện khi xem trước, đang chọn tuyến, hoặc đang xem toàn tuyến
+    if (navigating && !cameraPaused && !showRoutesPanel) return undefined;
+    return allMainRoutes.map((option, idx) => {
+      const diffMin = Math.round((option.durationSeconds - allMainRoutes[0].durationSeconds) / 60);
+      return {
+        index: idx,
+        coordinates: option.polyline ? decodePolyline(option.polyline) : [],
+        durationLabel: option.durationText ?? formatDurationSeconds(option.durationSeconds),
+        distanceLabel: option.distanceText ?? formatDistance(option.distanceMeters),
+        diffLabel:
+          idx > 0 && diffMin !== 0 ? `${diffMin > 0 ? `+${diffMin}` : diffMin}p` : undefined,
+        selected: idx === selectedRouteIndex,
+      };
+    });
+  }, [allMainRoutes, cameraPaused, detourStop, navigating, selectedRouteIndex, showRoutesPanel]);
+
   const inlinePoints = useMemo<MapPoint[]>(
     () => [{ id: String(placeId), latitude, longitude, label: '•', title: placeName }],
     [latitude, longitude, placeId, placeName],
@@ -642,23 +678,8 @@ export default function PlaceDirectionsMap({
         />
       </View>
 
-      <View className="mt-3 flex-row gap-3">
-        <View className="flex-1">
-          <Button
-            title={loading ? 'Đang tìm...' : route ? 'Cập nhật đường đi' : 'Chỉ đường'}
-            icon="directions"
-            loading={loading}
-            onPress={() => void startDirections(vehicle)}
-          />
-        </View>
-        <View className="flex-1">
-          <Button
-            title="Mở Bản Đồ"
-            icon="map"
-            variant="outline"
-            onPress={() => setExpanded(true)}
-          />
-        </View>
+      <View className="mt-3">
+        <Button title="Mở Bản Đồ" icon="map" onPress={() => setExpanded(true)} />
       </View>
 
       {/* Modal phóng to bản đồ Goong: chế độ Xem trước hoặc Dẫn đường + ghé tạm cây xăng */}
@@ -810,11 +831,20 @@ export default function PlaceDirectionsMap({
               onSelect={handleMarkerSelect}
               route={activeRouteCoords}
               secondaryRoute={secondaryRouteCoords}
+              routeOptions={routeOptionOverlays}
+              onSelectRouteOption={(idx) => {
+                setSelectedRouteIndex(idx);
+                lastSpokenKeyRef.current = null;
+                setShowRoutesPanel(false);
+                setTimeout(() => modalMapRef.current?.fitAll(), 160);
+              }}
               routeColor={detourStop ? DETOUR_COLOR : colors.primary}
               userLocation={userLocation}
               followUser={navigating && !cameraPaused && !showGasPanel}
               satellite={satellite}
               fitBottomPadding={120}
+              disableAutoFit={showGasPanel}
+              showCompass
               onUserInteract={() => {
                 if (navigating && !cameraPausedRef.current) {
                   pauseCamera();
