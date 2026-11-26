@@ -31,6 +31,14 @@ export function bindSession(binding: SessionBinding | null): void {
   session = binding;
 }
 
+export function getSessionAccessToken(): string | null {
+  return session?.getAccessToken() ?? null;
+}
+
+export async function refreshSessionToken(): Promise<boolean> {
+  return session ? session.refresh() : false;
+}
+
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** Một file ảnh chọn từ máy (expo-image-picker) để gửi multipart */
@@ -80,8 +88,7 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
     return await fetch(`${API_URL}${path}`, {
       method,
       headers,
-      body:
-        body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (error) {
@@ -131,10 +138,13 @@ export function appendFile(form: FormData, field: string, file: UploadFile): voi
 }
 
 /** Dựng query string, bỏ qua giá trị rỗng (URLSearchParams của React Native chưa đầy đủ) */
-export function buildQuery(params: Record<string, string | number | boolean | undefined | null>): string {
+export function buildQuery(
+  params: Record<string, string | number | boolean | undefined | null>,
+): string {
   return Object.entries(params)
-    .filter((entry): entry is [string, string | number | boolean] =>
-      entry[1] !== undefined && entry[1] !== null && entry[1] !== '',
+    .filter(
+      (entry): entry is [string, string | number | boolean] =>
+        entry[1] !== undefined && entry[1] !== null && entry[1] !== '',
     )
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
     .join('&');

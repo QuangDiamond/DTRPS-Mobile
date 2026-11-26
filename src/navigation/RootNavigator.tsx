@@ -27,35 +27,21 @@ import SelectedPlacesScreen from '../screens/trips/SelectedPlacesScreen';
 import SuggestedPlacesScreen from '../screens/trips/SuggestedPlacesScreen';
 import SuggestionDetailScreen from '../screens/trips/SuggestionDetailScreen';
 import { colors } from '../theme';
-import { Icon, type IconName } from '../ui/Icon';
+import AnimatedTabBar from './AnimatedTabBar';
 import type { RootStackParamList, TabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
-const TAB_ICONS: Record<keyof TabParamList, { icon: IconName; label: string }> = {
-  Home: { icon: 'home', label: 'Trang chủ' },
-  Explore: { icon: 'explore', label: 'Khám phá' },
-  Trips: { icon: 'luggage', label: 'Chuyến đi' },
-  Favorites: { icon: 'favorite', label: 'Yêu thích' },
-  Profile: { icon: 'person', label: 'Tài khoản' },
-};
-
-/** Thanh tab dưới — cùng các mục với thanh điều hướng du khách của web */
+/** Thanh tab dưới — có thanh trượt lò xo + icon nảy, cùng các mục với web */
 function Tabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      tabBar={(props) => <AnimatedTabBar {...props} />}
+      screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: '#8193A0',
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
-        // Không đặt chiều cao cố định: thư viện tự cộng khoảng thanh điều hướng của Android
-        tabBarStyle: { borderTopColor: '#E5F1F4' },
-        tabBarItemStyle: { paddingTop: 4 },
-        tabBarLabel: TAB_ICONS[route.name].label,
-        tabBarIcon: ({ color }) => <Icon name={TAB_ICONS[route.name].icon} size={24} color={color} />,
-      })}
+        animation: 'shift',
+      }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Explore" component={ExploreScreen} />
@@ -75,7 +61,14 @@ export default function RootNavigator() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.bg,
+        }}
+      >
         <ActivityIndicator color={colors.primary} />
       </View>
     );
@@ -94,13 +87,21 @@ export default function RootNavigator() {
           <Stack.Screen name="Settings" component={SettingsScreen} />
           <Stack.Screen name="PlanTrip" component={PlanTripScreen} />
           <Stack.Screen name="EditPlan" component={EditPlanScreen} />
-          <Stack.Screen name="GeneratingTrip" component={GeneratingTripScreen} options={{ gestureEnabled: false }} />
+          <Stack.Screen
+            name="GeneratingTrip"
+            component={GeneratingTripScreen}
+            options={{ gestureEnabled: false }}
+          />
           <Stack.Screen name="Suggestions" component={SuggestedPlacesScreen} />
           <Stack.Screen name="SuggestionDetail" component={SuggestionDetailScreen} />
           <Stack.Screen name="SelectedPlaces" component={SelectedPlacesScreen} />
           <Stack.Screen name="Itinerary" component={ItineraryOverviewScreen} />
           <Stack.Screen name="ItineraryDay" component={ItineraryDayScreen} />
-          <Stack.Screen name="LiveMap" component={LiveMapScreen} options={{ gestureEnabled: false }} />
+          <Stack.Screen
+            name="LiveMap"
+            component={LiveMapScreen}
+            options={{ gestureEnabled: false }}
+          />
           <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         </Stack.Group>
       ) : (

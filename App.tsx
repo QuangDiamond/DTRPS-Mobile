@@ -14,6 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/auth/AuthProvider';
 import { FavoritesProvider } from './src/auth/FavoritesProvider';
 import { NotificationsProvider } from './src/auth/NotificationsProvider';
+import LiveNotificationBanner from './src/components/LiveNotificationBanner';
 import RootNavigator from './src/navigation/RootNavigator';
 import { colors } from './src/theme';
 
@@ -33,7 +34,14 @@ export default function App() {
   // Chờ font (lỗi tải font thì vẫn mở app với font hệ thống)
   if (!fontsLoaded && !fontError) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: colors.bg,
+        }}
+      >
         <ActivityIndicator color={colors.primary} />
       </View>
     );
@@ -47,6 +55,7 @@ export default function App() {
             <FavoritesProvider>
               <StatusBar style="dark" />
               <RootNavigator />
+              <LiveNotificationBanner />
             </FavoritesProvider>
           </NavigationContainer>
         </NotificationsProvider>

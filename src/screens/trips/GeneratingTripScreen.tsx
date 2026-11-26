@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Easing, View } from 'react-native';
 import { Text } from '../../ui/Typography';
 import { errorMessage } from '../../api/http';
-import { tripFlowApi, type AiRecommendationResponse, type TravelPlanResponse } from '../../api/tripFlowApi';
+import {
+  tripFlowApi,
+  type AiRecommendationResponse,
+  type TravelPlanResponse,
+} from '../../api/tripFlowApi';
 import type { RootScreenProps } from '../../navigation/types';
 import { colors } from '../../theme';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
+import { PulseRing } from '../../ui/Motion';
 import { Screen } from '../../ui/Screen';
 import { Notice } from '../../ui/States';
 
@@ -15,7 +20,10 @@ const TOTAL_DURATION = 8000;
 const STEPS = [
   { doing: 'Đang xác nhận kế hoạch chuyến đi', done: 'Đã xác nhận kế hoạch được lưu' },
   { doing: 'Đang đọc sở thích trải nghiệm của bạn', done: 'Đã tải sở thích trải nghiệm' },
-  { doing: 'SmartTravel đang tìm và xếp hạng địa điểm phù hợp', done: 'SmartTravel đã xếp hạng các địa điểm' },
+  {
+    doing: 'SmartTravel đang tìm và xếp hạng địa điểm phù hợp',
+    done: 'SmartTravel đã xếp hạng các địa điểm',
+  },
   { doing: 'Đang chuẩn bị màn hình lựa chọn địa điểm', done: 'Sẵn sàng để bạn chọn địa điểm' },
 ];
 const easeOutQuad = (ratio: number) => 1 - (1 - ratio) * (1 - ratio);
@@ -25,7 +33,12 @@ function Globe({ finished, stopped }: { finished: boolean; stopped: boolean }) {
   useEffect(() => {
     if (stopped) return;
     const loop = Animated.loop(
-      Animated.timing(spin, { toValue: 1, duration: 5000, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 5000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
     );
     loop.start();
     return () => loop.stop();
@@ -33,17 +46,28 @@ function Globe({ finished, stopped }: { finished: boolean; stopped: boolean }) {
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   return (
     <View className="h-[210px] w-[210px] items-center justify-center self-center">
+      {!stopped ? <PulseRing size={208} color="#0891B2" /> : null}
       <View className="absolute h-[200px] w-[200px] rounded-full border border-[#D7EFF1] bg-[#F2FAFB]" />
       <View className="absolute h-[160px] w-[160px] rounded-full border border-[#D7EFF1]" />
       {!stopped ? (
-        <Animated.View style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate }] }}>
+        <Animated.View
+          style={{ position: 'absolute', width: 200, height: 200, transform: [{ rotate }] }}
+        >
           <View className="absolute right-[18px] top-[18px] h-8 w-8 items-center justify-center rounded-full bg-white">
-            <Icon name="flight" size={17} color={colors.primaryStrong} style={{ transform: [{ rotate: '45deg' }] }} />
+            <Icon
+              name="flight"
+              size={17}
+              color={colors.primaryStrong}
+              style={{ transform: [{ rotate: '45deg' }] }}
+            />
           </View>
           <View className="absolute bottom-[30px] left-3 h-3 w-3 rounded-full border-2 border-white bg-[#0891B2]" />
         </Animated.View>
       ) : null}
-      <View className="h-[118px] w-[118px] items-center justify-center rounded-full bg-white" style={{ elevation: 4 }}>
+      <View
+        className="h-[118px] w-[118px] items-center justify-center rounded-full bg-white"
+        style={{ elevation: 4 }}
+      >
         <Icon name={finished ? 'verified' : 'public'} size={72} color={colors.primary} />
       </View>
     </View>
@@ -51,7 +75,10 @@ function Globe({ finished, stopped }: { finished: boolean; stopped: boolean }) {
 }
 
 /** Đang chuẩn bị danh sách địa điểm: xác nhận plan + gọi AI gợi ý (giống GeneratingTripPage của web) */
-export default function GeneratingTripScreen({ navigation, route }: RootScreenProps<'GeneratingTrip'>) {
+export default function GeneratingTripScreen({
+  navigation,
+  route,
+}: RootScreenProps<'GeneratingTrip'>) {
   const { planId } = route.params;
   const [plan, setPlan] = useState<TravelPlanResponse | null>(null);
   const [planLoaded, setPlanLoaded] = useState(false);
@@ -102,15 +129,23 @@ export default function GeneratingTripScreen({ navigation, route }: RootScreenPr
   const dataReady = planLoaded && placesLoaded && plan !== null;
   const finished = dataReady && elapsed >= TOTAL_DURATION;
   const ratio = Math.min(1, elapsed / TOTAL_DURATION);
-  const percent = finished ? 100 : dataReady ? Math.round(easeOutQuad(ratio) * 100) : Math.min(95, Math.round(easeOutQuad(ratio) * 100));
+  const percent = finished
+    ? 100
+    : dataReady
+      ? Math.round(easeOutQuad(ratio) * 100)
+      : Math.min(95, Math.round(easeOutQuad(ratio) * 100));
   const doneSteps = finished ? 4 : planLoaded ? (placesLoaded ? 3 : 2) : 0;
   const currentStep = Math.min(doneSteps, STEPS.length - 1);
 
   const back = () =>
-    Alert.alert('Quay lại trang chuyến đi?', 'Kế hoạch đã được lưu. Quay lại sẽ không xóa kế hoạch này.', [
-      { text: 'Ở lại', style: 'cancel' },
-      { text: 'Quay lại', onPress: () => navigation.navigate('Tabs', { screen: 'Trips' }) },
-    ]);
+    Alert.alert(
+      'Quay lại trang chuyến đi?',
+      'Kế hoạch đã được lưu. Quay lại sẽ không xóa kế hoạch này.',
+      [
+        { text: 'Ở lại', style: 'cancel' },
+        { text: 'Quay lại', onPress: () => navigation.navigate('Tabs', { screen: 'Trips' }) },
+      ],
+    );
 
   return (
     <Screen>
@@ -140,31 +175,48 @@ export default function GeneratingTripScreen({ navigation, route }: RootScreenPr
 
         <View className="mt-5 rounded-[20px] border border-[#ECEFF5] p-4">
           <View className="flex-row items-center gap-2">
-            <Text className="flex-1 text-[14px] font-bold text-[#13364A]">Đang tổng hợp thông tin địa điểm</Text>
+            <Text className="flex-1 text-[14px] font-bold text-[#13364A]">
+              Đang tổng hợp thông tin địa điểm
+            </Text>
             <Text className="text-[11px] text-[#72818C]">
               ({doneSteps}/{STEPS.length})
             </Text>
             <Text className="text-[16px] font-extrabold text-[#0891B2]">{percent}%</Text>
           </View>
           <View className="mt-2.5 h-2 overflow-hidden rounded-full bg-[#E9EEF5]">
-            <View style={{ width: `${percent}%`, height: '100%', backgroundColor: colors.primary }} />
+            <View
+              style={{ width: `${percent}%`, height: '100%', backgroundColor: colors.primary }}
+            />
           </View>
           <View className="mt-3 gap-2">
             {STEPS.map((step, index) => {
-              const status = index < doneSteps ? 'done' : !error && index === currentStep ? 'doing' : 'waiting';
+              const status =
+                index < doneSteps ? 'done' : !error && index === currentStep ? 'doing' : 'waiting';
               return (
                 <View
                   key={step.done}
                   className={`flex-row items-center gap-2.5 rounded-2xl px-3 py-2.5 ${
-                    status === 'doing' ? 'border border-[#9CDFE6] bg-[#E1F9FB]' : status === 'done' ? 'bg-[#F4F6FB]' : ''
+                    status === 'doing'
+                      ? 'border border-[#9CDFE6] bg-[#E1F9FB]'
+                      : status === 'done'
+                        ? 'bg-[#F4F6FB]'
+                        : ''
                   }`}
                 >
                   <Icon
-                    name={status === 'done' ? 'check-circle' : status === 'doing' ? 'autorenew' : 'radio-button-unchecked'}
+                    name={
+                      status === 'done'
+                        ? 'check-circle'
+                        : status === 'doing'
+                          ? 'autorenew'
+                          : 'radio-button-unchecked'
+                    }
                     size={18}
                     color={status === 'waiting' ? '#B9C6D0' : colors.primary}
                   />
-                  <Text className={`flex-1 text-[12.5px] ${status === 'waiting' ? 'text-[#9AA9B3]' : 'font-semibold text-[#13364A]'}`}>
+                  <Text
+                    className={`flex-1 text-[12.5px] ${status === 'waiting' ? 'text-[#9AA9B3]' : 'font-semibold text-[#13364A]'}`}
+                  >
                     {status === 'done' ? step.done : step.doing}
                   </Text>
                 </View>
@@ -184,10 +236,19 @@ export default function GeneratingTripScreen({ navigation, route }: RootScreenPr
             <Button title="Thử lại" icon="refresh" onPress={() => setRetryCount((n) => n + 1)} />
           ) : (
             <Button
-              title={finished ? `Xem ${recommendation?.items.length ?? 0} địa điểm gợi ý` : 'Đang chuẩn bị...'}
+              title={
+                finished
+                  ? `Xem ${recommendation?.items.length ?? 0} địa điểm gợi ý`
+                  : 'Đang chuẩn bị...'
+              }
               iconRight={finished ? 'arrow-forward' : undefined}
               disabled={!finished}
-              onPress={() => navigation.replace('Suggestions', { planId, recommendation: recommendation ?? undefined })}
+              onPress={() =>
+                navigation.replace('Suggestions', {
+                  planId,
+                  recommendation: recommendation ?? undefined,
+                })
+              }
             />
           )}
           <Button title="Quay lại chuyến đi" variant="ghost" onPress={back} />

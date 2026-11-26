@@ -23,7 +23,8 @@ import type { RootScreenProps } from '../../navigation/types';
 import { colors, shadow } from '../../theme';
 import { Button, IconButton } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
-import { ErrorState, Loading, Notice } from '../../ui/States';
+import { AnimatedProgressBar, FadeInView, ListCardSkeleton } from '../../ui/Motion';
+import { ErrorState, Notice } from '../../ui/States';
 import { Toast, useToast } from '../../ui/Toast';
 import { formatTime } from '../../utils/format';
 import { setNavigationLockScreen } from '../../utils/lockScreen';
@@ -581,8 +582,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-        <Loading label="Đang tải hành trình..." />
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg, padding: 16 }}>
+        <ListCardSkeleton count={4} />
       </SafeAreaView>
     );
   }
@@ -707,7 +708,12 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
         style={
           navMode
             ? { flex: 1, position: 'relative', backgroundColor: '#E8F3F5', overflow: 'hidden' }
-            : { height: '42%', position: 'relative', backgroundColor: '#E8F3F5', overflow: 'hidden' }
+            : {
+                height: '42%',
+                position: 'relative',
+                backgroundColor: '#E8F3F5',
+                overflow: 'hidden',
+              }
         }
       >
         <PlacesMap
@@ -926,128 +932,137 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
 
       {/* Khay trượt ngang chọn tuyến thay thế khi đang navMode */}
       {navMode && showRoutesPanel && !detourStop && allMainRoutes.length > 1 ? (
-        <View className="border-t border-[#CBE7EE] bg-[#F4FBFD] px-4 py-3">
-          <View className="mb-2 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-1.5">
-              <Icon name="alt-route" size={18} color={colors.primary} />
-              <Text className="text-[13.5px] font-extrabold text-[#13364A]">
-                Chọn tuyến đường ({allMainRoutes.length} tuyến)
-              </Text>
+        <FadeInView offset={16} duration={220}>
+          <View className="border-t border-[#CBE7EE] bg-[#F4FBFD] px-4 py-3">
+            <View className="mb-2 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-1.5">
+                <Icon name="alt-route" size={18} color={colors.primary} />
+                <Text className="text-[13.5px] font-extrabold text-[#13364A]">
+                  Chọn tuyến đường ({allMainRoutes.length} tuyến)
+                </Text>
+              </View>
+              <Pressable onPress={() => setShowRoutesPanel(false)} hitSlop={8}>
+                <Icon name="close" size={19} color="#64748B" />
+              </Pressable>
             </View>
-            <Pressable onPress={() => setShowRoutesPanel(false)} hitSlop={8}>
-              <Icon name="close" size={19} color="#64748B" />
-            </Pressable>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 10 }}
-          >
-            {allMainRoutes.map((option, idx) => {
-              const selected = idx === selectedRouteIndex;
-              const diffMin = Math.round(
-                (option.durationSeconds - allMainRoutes[0].durationSeconds) / 60,
-              );
-              return (
-                <Pressable
-                  key={idx}
-                  onPress={() => chooseAlternativeRoute(idx)}
-                  style={{ width: 195 }}
-                  className={`rounded-2xl border p-3 ${
-                    selected ? 'border-[#0891B2] bg-[#E7F8FA]' : 'border-[#DCEBEF] bg-white'
-                  }`}
-                >
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-[12px] font-bold text-[#0E7490]">
-                      {idx === 0 ? 'Tuyến nhanh nhất' : `Tuyến ${idx + 1}`}
-                    </Text>
-                    {selected ? (
-                      <Icon name="check-circle" size={16} color={colors.primary} />
-                    ) : null}
-                  </View>
-                  <Text className="mt-1 text-[15px] font-extrabold text-[#13364A]">
-                    {option.durationText ?? formatDurationSeconds(option.durationSeconds)}
-                  </Text>
-                  <Text className="mt-0.5 text-[12px] text-[#5C6E7E]">
-                    {option.distanceText ?? formatDistance(option.distanceMeters)}
-                    {idx > 0 && diffMin !== 0
-                      ? ` (${diffMin > 0 ? `+${diffMin}` : diffMin} phút)`
-                      : ''}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
-
-      {/* Khay trượt ngang chọn cây xăng gần khi đang navMode */}
-      {navMode && showGasPanel ? (
-        <View className="border-t border-[#FED7AA] bg-[#FFFBF7] px-4 py-3">
-          <View className="mb-2 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-1.5">
-              <Icon name="local-gas-station" size={18} color={DETOUR_COLOR} />
-              <Text className="text-[13.5px] font-extrabold text-[#9A3412]">
-                Cây xăng gần bạn (≤ 5 km)
-              </Text>
-            </View>
-            <Pressable onPress={() => setShowGasPanel(false)} hitSlop={8}>
-              <Icon name="close" size={19} color="#64748B" />
-            </Pressable>
-          </View>
-          {gasLoading ? (
-            <Text className="py-2 text-[12.5px] text-[#72818C]">
-              Đang tìm cây xăng gần vị trí của bạn...
-            </Text>
-          ) : gasError ? (
-            <Text className="py-2 text-[12.5px] text-[#B91C1C]">{gasError}</Text>
-          ) : (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 10 }}
             >
-              {gasStations.map((station) => {
-                const selected = detourStop?.placeId === station.placeId;
+              {allMainRoutes.map((option, idx) => {
+                const selected = idx === selectedRouteIndex;
+                const diffMin = Math.round(
+                  (option.durationSeconds - allMainRoutes[0].durationSeconds) / 60,
+                );
                 return (
-                  <View
-                    key={station.placeId}
-                    style={{ width: 220 }}
+                  <Pressable
+                    key={idx}
+                    onPress={() => chooseAlternativeRoute(idx)}
+                    style={{ width: 195 }}
                     className={`rounded-2xl border p-3 ${
-                      selected ? 'border-[#EA580C] bg-[#FFF7ED]' : 'border-[#FED7AA] bg-white'
+                      selected ? 'border-[#0891B2] bg-[#E7F8FA]' : 'border-[#DCEBEF] bg-white'
                     }`}
                   >
-                    <Text numberOfLines={1} className="text-[13.5px] font-extrabold text-[#13364A]">
-                      {station.name}
-                    </Text>
-                    <Text numberOfLines={2} className="mt-0.5 text-[11.5px] text-[#72818C]">
-                      {station.address}
-                    </Text>
-                    <View className="mt-2.5 flex-row items-center justify-between">
-                      <Text className="text-[12px] font-bold text-[#EA580C]">
-                        Cách {formatMeters(station.distanceMeters)}
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-[12px] font-bold text-[#0E7490]">
+                        {idx === 0 ? 'Tuyến nhanh nhất' : `Tuyến ${idx + 1}`}
                       </Text>
                       {selected ? (
-                        <View className="rounded-full bg-[#FFEDD5] px-2.5 py-1">
-                          <Text className="text-[11.5px] font-bold text-[#C2410C]">Đang chọn</Text>
-                        </View>
-                      ) : (
-                        <Pressable
-                          onPress={() => selectGasStation(station)}
-                          className="rounded-full bg-[#EA580C] px-3 py-1"
-                        >
-                          <Text className="text-[11.5px] font-bold text-white">
-                            {detourStop ? 'Đổi sang' : 'Rẽ qua'}
-                          </Text>
-                        </Pressable>
-                      )}
+                        <Icon name="check-circle" size={16} color={colors.primary} />
+                      ) : null}
                     </View>
-                  </View>
+                    <Text className="mt-1 text-[15px] font-extrabold text-[#13364A]">
+                      {option.durationText ?? formatDurationSeconds(option.durationSeconds)}
+                    </Text>
+                    <Text className="mt-0.5 text-[12px] text-[#5C6E7E]">
+                      {option.distanceText ?? formatDistance(option.distanceMeters)}
+                      {idx > 0 && diffMin !== 0
+                        ? ` (${diffMin > 0 ? `+${diffMin}` : diffMin} phút)`
+                        : ''}
+                    </Text>
+                  </Pressable>
                 );
               })}
             </ScrollView>
-          )}
-        </View>
+          </View>
+        </FadeInView>
+      ) : null}
+
+      {/* Khay trượt ngang chọn cây xăng gần khi đang navMode */}
+      {navMode && showGasPanel ? (
+        <FadeInView offset={16} duration={220}>
+          <View className="border-t border-[#FED7AA] bg-[#FFFBF7] px-4 py-3">
+            <View className="mb-2 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-1.5">
+                <Icon name="local-gas-station" size={18} color={DETOUR_COLOR} />
+                <Text className="text-[13.5px] font-extrabold text-[#9A3412]">
+                  Cây xăng gần bạn (≤ 5 km)
+                </Text>
+              </View>
+              <Pressable onPress={() => setShowGasPanel(false)} hitSlop={8}>
+                <Icon name="close" size={19} color="#64748B" />
+              </Pressable>
+            </View>
+            {gasLoading ? (
+              <Text className="py-2 text-[12.5px] text-[#72818C]">
+                Đang tìm cây xăng gần vị trí của bạn...
+              </Text>
+            ) : gasError ? (
+              <Text className="py-2 text-[12.5px] text-[#B91C1C]">{gasError}</Text>
+            ) : (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 10 }}
+              >
+                {gasStations.map((station) => {
+                  const selected = detourStop?.placeId === station.placeId;
+                  return (
+                    <View
+                      key={station.placeId}
+                      style={{ width: 220 }}
+                      className={`rounded-2xl border p-3 ${
+                        selected ? 'border-[#EA580C] bg-[#FFF7ED]' : 'border-[#FED7AA] bg-white'
+                      }`}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        className="text-[13.5px] font-extrabold text-[#13364A]"
+                      >
+                        {station.name}
+                      </Text>
+                      <Text numberOfLines={2} className="mt-0.5 text-[11.5px] text-[#72818C]">
+                        {station.address}
+                      </Text>
+                      <View className="mt-2.5 flex-row items-center justify-between">
+                        <Text className="text-[12px] font-bold text-[#EA580C]">
+                          Cách {formatMeters(station.distanceMeters)}
+                        </Text>
+                        {selected ? (
+                          <View className="rounded-full bg-[#FFEDD5] px-2.5 py-1">
+                            <Text className="text-[11.5px] font-bold text-[#C2410C]">
+                              Đang chọn
+                            </Text>
+                          </View>
+                        ) : (
+                          <Pressable
+                            onPress={() => selectGasStation(station)}
+                            className="rounded-full bg-[#EA580C] px-3 py-1"
+                          >
+                            <Text className="text-[11.5px] font-bold text-white">
+                              {detourStop ? 'Đổi sang' : 'Rẽ qua'}
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </FadeInView>
       ) : null}
 
       <ScrollView
@@ -1071,8 +1086,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
         }
         contentContainerStyle={{ padding: 16, paddingBottom: navMode ? 16 : 32 + insets.bottom }}
       >
-        <View className="mb-3 h-2 overflow-hidden rounded-full bg-[#E3E8EF]">
-          <View style={{ width: `${percent}%`, height: '100%', backgroundColor: colors.success }} />
+        <View className="mb-3">
+          <AnimatedProgressBar percent={percent} color={colors.success} />
         </View>
 
         {pendingStop ? (
@@ -1258,8 +1273,8 @@ export default function LiveMapScreen({ navigation, route: navRoute }: RootScree
                 {route?.arrived || nav.arrived ? (
                   <View className="mt-2.5">
                     <Notice tone="success">
-                      Bạn đã ở gần {route?.placeName ?? pendingStop.placeName}. Bấm “Đã đến” khi tham
-                      quan xong.
+                      Bạn đã ở gần {route?.placeName ?? pendingStop.placeName}. Bấm “Đã đến” khi
+                      tham quan xong.
                     </Notice>
                   </View>
                 ) : null}

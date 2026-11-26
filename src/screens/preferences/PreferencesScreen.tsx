@@ -11,15 +11,24 @@ import { colors } from '../../theme';
 import { Button } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
-import { Loading, Notice } from '../../ui/States';
+import { Notice } from '../../ui/States';
+import { ListCardSkeleton } from '../../ui/Motion';
 
 // 4 câu hỏi cá nhân hóa, mỗi câu một bước, cộng bước "Yêu cầu đặc biệt" (giống web)
 const STEPS = [
-  ...EXPERIENCE_QUESTIONS.map((question) => ({ title: question.title, subtitle: question.subtitle })),
+  ...EXPERIENCE_QUESTIONS.map((question) => ({
+    title: question.title,
+    subtitle: question.subtitle,
+  })),
   { title: 'Yêu cầu đặc biệt', subtitle: 'Bạn có yêu cầu đặc biệt nào không? (Chọn nếu có)' },
 ];
 
-const EMPTY: TravelPreferences = { notes: null, interests: [], specialNeeds: [], experiencePreferences: [] };
+const EMPTY: TravelPreferences = {
+  notes: null,
+  interests: [],
+  specialNeeds: [],
+  experiencePreferences: [],
+};
 
 /** Icon theo mã yêu cầu đặc biệt của Backend (giống preferenceOptions.ts của web) */
 const SPECIAL_NEED_ICONS: Record<string, IconName> = {
@@ -81,7 +90,7 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
   if (!preferences || !specialNeeds) {
     return (
       <Screen header={header}>
-        <Loading />
+        <ListCardSkeleton count={3} />
       </Screen>
     );
   }
@@ -92,7 +101,9 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
       previous
         ? {
             ...previous,
-            [key]: previous[key].includes(code) ? previous[key].filter((item) => item !== code) : [...previous[key], code],
+            [key]: previous[key].includes(code)
+              ? previous[key].filter((item) => item !== code)
+              : [...previous[key], code],
           }
         : previous,
     );
@@ -100,7 +111,9 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
   // Mỗi câu cá nhân hóa cần chọn ít nhất một đáp án; yêu cầu đặc biệt không bắt buộc
   const canContinue =
     step < EXPERIENCE_QUESTIONS.length
-      ? EXPERIENCE_QUESTIONS[step].options.some((option) => preferences.experiencePreferences.includes(option.code))
+      ? EXPERIENCE_QUESTIONS[step].options.some((option) =>
+          preferences.experiencePreferences.includes(option.code),
+        )
       : true;
 
   const finish = async () => {
@@ -109,7 +122,13 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
     try {
       await userApi.updatePreferences(preferences);
       setDone(true);
-      setTimeout(() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Tabs', { screen: 'Home' })), 1500);
+      setTimeout(
+        () =>
+          navigation.canGoBack()
+            ? navigation.goBack()
+            : navigation.navigate('Tabs', { screen: 'Home' }),
+        1500,
+      );
     } catch (saveError) {
       setError(errorMessage(saveError));
       setSaving(false);
@@ -146,17 +165,27 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
 
       <View className="mb-4 flex-row items-center gap-3">
         <View className="h-2 flex-1 overflow-hidden rounded-full bg-[#E6EEF1]">
-          <View style={{ width: `${((step + 1) / STEPS.length) * 100}%`, height: '100%', backgroundColor: colors.primary }} />
+          <View
+            style={{
+              width: `${((step + 1) / STEPS.length) * 100}%`,
+              height: '100%',
+              backgroundColor: colors.primary,
+            }}
+          />
         </View>
         <Text className="text-[12px] font-bold text-[#557080]">
           {step + 1}/{STEPS.length}
         </Text>
       </View>
 
-      <Text className="text-[20px] font-extrabold leading-7 text-[#13364A]">{STEPS[step].title}</Text>
+      <Text className="text-[20px] font-extrabold leading-7 text-[#13364A]">
+        {STEPS[step].title}
+      </Text>
       <Text className="mb-4 mt-1 text-[13px] text-[#72818C]">{STEPS[step].subtitle}</Text>
 
-      {loadError ? <Notice tone="danger">{`Không tải được sở thích đã lưu: ${loadError}`}</Notice> : null}
+      {loadError ? (
+        <Notice tone="danger">{`Không tải được sở thích đã lưu: ${loadError}`}</Notice>
+      ) : null}
 
       {step < EXPERIENCE_QUESTIONS.length ? (
         <View className="flex-row flex-wrap justify-between gap-y-3">
@@ -175,10 +204,14 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
                 }}
                 className="w-[48.5%] items-center rounded-2xl px-2 py-4"
               >
-                <View className={`h-12 w-12 items-center justify-center rounded-full ${selected ? 'bg-[#D3EFF2]' : 'bg-[#F1F4F6]'}`}>
+                <View
+                  className={`h-12 w-12 items-center justify-center rounded-full ${selected ? 'bg-[#D3EFF2]' : 'bg-[#F1F4F6]'}`}
+                >
                   <Text className="text-[24px]">{option.emoji}</Text>
                 </View>
-                <Text className="mt-2 text-center text-[13px] font-bold text-[#13364A]">{option.label}</Text>
+                <Text className="mt-2 text-center text-[13px] font-bold text-[#13364A]">
+                  {option.label}
+                </Text>
                 {selected ? (
                   <View className="absolute right-2 top-2">
                     <Icon name="check-circle" size={18} color={colors.primary} />
@@ -205,12 +238,24 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
                 }}
                 className="flex-row items-center rounded-2xl px-4 py-3.5"
               >
-                <View className={`h-10 w-10 items-center justify-center rounded-full ${selected ? 'bg-[#D3EFF2]' : 'bg-[#F4F6F8]'}`}>
-                  <Icon name={SPECIAL_NEED_ICONS[item.code] ?? 'info'} size={21} color={colors.primary} />
-                </View>
-                <Text className="ml-3 flex-1 text-[14px] font-semibold text-[#13364A]">{item.name}</Text>
                 <View
-                  style={{ borderWidth: selected ? 0 : 1.5, borderColor: '#C5CDD3', backgroundColor: selected ? colors.primary : 'transparent' }}
+                  className={`h-10 w-10 items-center justify-center rounded-full ${selected ? 'bg-[#D3EFF2]' : 'bg-[#F4F6F8]'}`}
+                >
+                  <Icon
+                    name={SPECIAL_NEED_ICONS[item.code] ?? 'info'}
+                    size={21}
+                    color={colors.primary}
+                  />
+                </View>
+                <Text className="ml-3 flex-1 text-[14px] font-semibold text-[#13364A]">
+                  {item.name}
+                </Text>
+                <View
+                  style={{
+                    borderWidth: selected ? 0 : 1.5,
+                    borderColor: '#C5CDD3',
+                    backgroundColor: selected ? colors.primary : 'transparent',
+                  }}
                   className="h-5 w-5 items-center justify-center rounded-md"
                 >
                   {selected ? <Icon name="check" size={15} color="#FFFFFF" /> : null}
@@ -228,7 +273,9 @@ export default function PreferencesScreen({ navigation, route }: RootScreenProps
       ) : null}
       {done ? (
         <View className="mt-3">
-          <Notice tone="success">Đã lưu sở thích. SmartTravel sẽ gợi ý điểm đến và lịch trình phù hợp hơn với bạn.</Notice>
+          <Notice tone="success">
+            Đã lưu sở thích. SmartTravel sẽ gợi ý điểm đến và lịch trình phù hợp hơn với bạn.
+          </Notice>
         </View>
       ) : null}
     </Screen>

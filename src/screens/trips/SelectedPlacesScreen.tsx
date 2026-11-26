@@ -10,11 +10,16 @@ import { Cover, FlowProgress } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
-import { EmptyState, ErrorState, Loading, Notice } from '../../ui/States';
+import { EmptyState, ErrorState, Notice } from '../../ui/States';
+import { ListCardSkeleton } from '../../ui/Motion';
 import { countDays, formatDate, formatMoney } from '../../utils/format';
 
 const placeCost = (place: TripPlace) =>
-  place.estimatedCost === null ? 'Chưa có giá tham khảo' : place.estimatedCost === 0 ? 'Miễn phí' : formatMoney(place.estimatedCost, place.currency ?? 'VND');
+  place.estimatedCost === null
+    ? 'Chưa có giá tham khảo'
+    : place.estimatedCost === 0
+      ? 'Miễn phí'
+      : formatMoney(place.estimatedCost, place.currency ?? 'VND');
 
 function InfoChip({ icon, title }: { icon: IconName; title: string }) {
   return (
@@ -29,7 +34,10 @@ function InfoChip({ icon, title }: { icon: IconName; title: string }) {
  * Bước 4–5: địa điểm đã chọn (plan_places) → Backend tự xếp lịch trình.
  * Giống SelectedPlacesPage của web.
  */
-export default function SelectedPlacesScreen({ navigation, route }: RootScreenProps<'SelectedPlaces'>) {
+export default function SelectedPlacesScreen({
+  navigation,
+  route,
+}: RootScreenProps<'SelectedPlaces'>) {
   const { planId } = route.params;
   const [plan, setPlan] = useState<TravelPlanResponse | null>(null);
   const [places, setPlaces] = useState<TripPlace[]>([]);
@@ -60,8 +68,13 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
   );
 
   const costSummary = useMemo(() => {
-    const prices = places.filter((place) => place.estimatedCost !== null).map((place) => place.estimatedCost as number);
-    return { knownTotal: prices.reduce((sum, price) => sum + price, 0), unknownCount: places.length - prices.length };
+    const prices = places
+      .filter((place) => place.estimatedCost !== null)
+      .map((place) => place.estimatedCost as number);
+    return {
+      knownTotal: prices.reduce((sum, price) => sum + price, 0),
+      unknownCount: places.length - prices.length,
+    };
   }, [places]);
 
   const removePlace = (place: TripPlace) =>
@@ -99,7 +112,10 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
         notes: 'Lịch trình được tự động sắp xếp từ các địa điểm Traveller đã chọn.',
       });
       // Backend luôn tạo lịch trình; chỗ chưa hợp lý được trả về dạng cảnh báo, không chặn người dùng
-      navigation.navigate('Itinerary', { planId: generated.planId, warnings: generated.warnings ?? [] });
+      navigation.navigate('Itinerary', {
+        planId: generated.planId,
+        warnings: generated.warnings ?? [],
+      });
     } catch (caught) {
       setActionError(errorMessage(caught));
     } finally {
@@ -117,14 +133,17 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
   if (loading && !plan) {
     return (
       <Screen header={header}>
-        <Loading />
+        <ListCardSkeleton count={4} />
       </Screen>
     );
   }
   if (error || !plan) {
     return (
       <Screen header={header}>
-        <ErrorState message={error ?? 'Không tải được kế hoạch.'} onRetry={() => setRetryCount((n) => n + 1)} />
+        <ErrorState
+          message={error ?? 'Không tải được kế hoạch.'}
+          onRetry={() => setRetryCount((n) => n + 1)}
+        />
       </Screen>
     );
   }
@@ -136,7 +155,12 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
         places.length > 0 ? (
           <View className="flex-row gap-2.5 border-t border-[#EEF1F5] bg-white px-4 pb-4 pt-3">
             <View className="flex-1">
-              <Button title="Thêm địa điểm" icon="add" variant="outline" onPress={() => navigation.navigate('Suggestions', { planId })} />
+              <Button
+                title="Thêm địa điểm"
+                icon="add"
+                variant="outline"
+                onPress={() => navigation.navigate('Suggestions', { planId })}
+              />
             </View>
             <View className="flex-[1.4]">
               <Button
@@ -153,9 +177,14 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
     >
       <View style={shadow.card} className="mb-4 rounded-3xl bg-white p-4">
         <Text className="text-[18px] font-extrabold text-[#13364A]">{plan.destination}</Text>
-        <Text className="mt-0.5 text-[12px] text-[#72818C]">{places.length} địa điểm đã thêm vào kế hoạch</Text>
+        <Text className="mt-0.5 text-[12px] text-[#72818C]">
+          {places.length} địa điểm đã thêm vào kế hoạch
+        </Text>
         <View className="mt-3 flex-row flex-wrap gap-2">
-          <InfoChip icon="calendar-month" title={`${formatDate(plan.startDate)} – ${formatDate(plan.endDate)}`} />
+          <InfoChip
+            icon="calendar-month"
+            title={`${formatDate(plan.startDate)} – ${formatDate(plan.endDate)}`}
+          />
           <InfoChip icon="schedule" title={`${countDays(plan.startDate, plan.endDate)} ngày`} />
           <InfoChip icon="group" title={`${plan.groupSize} người`} />
         </View>
@@ -168,15 +197,29 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
           icon="shopping-basket"
           title="Chưa có địa điểm nào"
           message="Hãy chọn ít nhất một địa điểm trước khi tạo lịch trình."
-          action={<Button title="Chọn địa điểm" icon="travel-explore" onPress={() => navigation.navigate('Suggestions', { planId })} />}
+          action={
+            <Button
+              title="Chọn địa điểm"
+              icon="travel-explore"
+              onPress={() => navigation.navigate('Suggestions', { planId })}
+            />
+          }
         />
       ) : (
         <>
           <Text className="mb-2.5 text-[15px] font-extrabold text-[#13364A]">Địa điểm đã chọn</Text>
           <View className="gap-3">
             {places.map((place, index) => (
-              <View key={place.placeId} style={shadow.card} className="flex-row gap-3 rounded-2xl bg-white p-2.5">
-                <Pressable onPress={() => navigation.navigate('SuggestionDetail', { planId, placeId: place.placeId })}>
+              <View
+                key={place.placeId}
+                style={shadow.card}
+                className="flex-row gap-3 rounded-2xl bg-white p-2.5"
+              >
+                <Pressable
+                  onPress={() =>
+                    navigation.navigate('SuggestionDetail', { planId, placeId: place.placeId })
+                  }
+                >
                   <Cover uri={place.imageUrl} height={86} radius={14} style={{ width: 86 }} />
                   <View className="absolute left-1.5 top-1.5 h-6 w-6 items-center justify-center rounded-full bg-[#0891B2]">
                     <Text className="text-[11px] font-extrabold text-white">{index + 1}</Text>
@@ -184,7 +227,10 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
                 </Pressable>
                 <View className="min-w-0 flex-1 py-0.5">
                   <View className="flex-row items-start gap-2">
-                    <Text numberOfLines={2} className="flex-1 text-[14px] font-extrabold text-[#13364A]">
+                    <Text
+                      numberOfLines={2}
+                      className="flex-1 text-[14px] font-extrabold text-[#13364A]"
+                    >
                       {place.name}
                     </Text>
                     <Pressable
@@ -193,17 +239,28 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
                       hitSlop={8}
                       accessibilityLabel={`Bỏ ${place.name} khỏi kế hoạch`}
                     >
-                      <Icon name={deletingPlaceId === place.placeId ? 'hourglass-empty' : 'delete-outline'} size={21} color={colors.danger} />
+                      <Icon
+                        name={
+                          deletingPlaceId === place.placeId ? 'hourglass-empty' : 'delete-outline'
+                        }
+                        size={21}
+                        color={colors.danger}
+                      />
                     </Pressable>
                   </View>
                   <Text numberOfLines={1} className="mt-0.5 text-[11.5px] text-[#72818C]">
                     {place.address || 'Chưa cập nhật địa chỉ'}
                   </Text>
                   <View className="mt-1.5 flex-row items-center justify-between">
-                    <Text numberOfLines={1} className="flex-1 text-[11px] font-semibold text-[#557080]">
+                    <Text
+                      numberOfLines={1}
+                      className="flex-1 text-[11px] font-semibold text-[#557080]"
+                    >
                       {place.categoryName ?? place.categoryCode ?? ''}
                     </Text>
-                    <Text className="text-[12px] font-extrabold text-[#087A78]">{placeCost(place)}</Text>
+                    <Text className="text-[12px] font-extrabold text-[#087A78]">
+                      {placeCost(place)}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -212,21 +269,27 @@ export default function SelectedPlacesScreen({ navigation, route }: RootScreenPr
 
           <View className="mt-4 rounded-2xl bg-[#F4FBF8] p-4">
             <View className="flex-row items-center justify-between">
-              <Text className="text-[13px] font-bold text-[#13364A]">Cộng các giá tham khảo đã có</Text>
-              <Text className="text-[16px] font-extrabold text-[#0E7490]">{formatMoney(costSummary.knownTotal)}</Text>
+              <Text className="text-[13px] font-bold text-[#13364A]">
+                Cộng các giá tham khảo đã có
+              </Text>
+              <Text className="text-[16px] font-extrabold text-[#0E7490]">
+                {formatMoney(costSummary.knownTotal)}
+              </Text>
             </View>
             <Text className="mt-1 text-[11.5px] leading-[18px] text-[#72818C]">
               Chưa nhân theo số người, chưa tính di chuyển và các chi phí khác.
-              {costSummary.unknownCount > 0 ? ` Có ${costSummary.unknownCount} địa điểm chưa có giá.` : ''} Backend sẽ tính
-              chi phí dự kiến khi tạo lịch trình.
+              {costSummary.unknownCount > 0
+                ? ` Có ${costSummary.unknownCount} địa điểm chưa có giá.`
+                : ''}{' '}
+              Backend sẽ tính chi phí dự kiến khi tạo lịch trình.
             </Text>
           </View>
 
           <View className="mt-3 flex-row gap-2 rounded-2xl bg-[#ECFEFF] p-3.5">
             <Icon name="info-outline" size={18} color={colors.primaryStrong} />
             <Text className="flex-1 text-[11.5px] leading-[18px] text-[#0E7490]">
-              Chỉ những địa điểm đã chọn mới được đưa vào lịch trình. Backend sẽ xếp theo ngày, giờ mở cửa,
-              khoảng cách ước lượng và nhịp độ; không dùng AI để xếp lịch.
+              Chỉ những địa điểm đã chọn mới được đưa vào lịch trình. Backend sẽ xếp theo ngày, giờ
+              mở cửa, khoảng cách ước lượng và nhịp độ; không dùng AI để xếp lịch.
             </Text>
           </View>
         </>

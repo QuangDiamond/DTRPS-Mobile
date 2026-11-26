@@ -13,6 +13,7 @@ import { Chip, Sheet } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { EmptyState, ErrorState, Loading } from '../../ui/States';
+import { FadeInView, PlaceCardSkeleton, ScalePressable } from '../../ui/Motion';
 import { fold } from '../../utils/format';
 
 type SortMode = 'default' | 'rating' | 'popular';
@@ -52,8 +53,14 @@ export default function ExploreScreen() {
   const requestVersion = useRef(0);
 
   useEffect(() => {
-    referenceApi.provinces().then(setProvinces).catch(() => undefined);
-    referenceApi.categories().then(setGroups).catch(() => undefined);
+    referenceApi
+      .provinces()
+      .then(setProvinces)
+      .catch(() => undefined);
+    referenceApi
+      .categories()
+      .then(setGroups)
+      .catch(() => undefined);
   }, []);
 
   const suggestions = useMemo(() => {
@@ -81,7 +88,9 @@ export default function ExploreScreen() {
   const serverCategory = useMemo(() => {
     if (selectedCodes.length !== 1) return undefined;
     const code = selectedCodes[0];
-    return groups.some((group) => group.subtypes.some((sub) => sub.code === code)) ? code : undefined;
+    return groups.some((group) => group.subtypes.some((sub) => sub.code === code))
+      ? code
+      : undefined;
   }, [groups, selectedCodes]);
 
   useEffect(() => {
@@ -136,7 +145,9 @@ export default function ExploreScreen() {
       );
     });
     if (sortMode === 'rating') {
-      return [...result].sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || b.reviewCount - a.reviewCount);
+      return [...result].sort(
+        (a, b) => (b.rating ?? -1) - (a.rating ?? -1) || b.reviewCount - a.reviewCount,
+      );
     }
     if (sortMode === 'popular') return [...result].sort((a, b) => b.reviewCount - a.reviewCount);
     return result;
@@ -215,7 +226,11 @@ export default function ExploreScreen() {
         {suggestionsOpen && suggestions.length > 0 ? (
           <View className="mt-2 rounded-2xl bg-white p-1.5">
             {suggestions.map((item) => (
-              <Pressable key={item.code} onPress={() => chooseProvince(item)} className="flex-row items-center gap-2 rounded-xl px-3 py-2.5">
+              <Pressable
+                key={item.code}
+                onPress={() => chooseProvince(item)}
+                className="flex-row items-center gap-2 rounded-xl px-3 py-2.5"
+              >
                 <Icon name="location-on" size={17} color={colors.primary} />
                 <Text className="text-[13px] font-bold text-[#34575A]">{item.name}</Text>
               </Pressable>
@@ -230,7 +245,11 @@ export default function ExploreScreen() {
         {!province && quickProvinces.length > 0 ? (
           <View className="mt-3 flex-row flex-wrap gap-2">
             {quickProvinces.map((item) => (
-              <Pressable key={item.code} onPress={() => chooseProvince(item)} className="rounded-full border border-white/35 px-3 py-1.5">
+              <Pressable
+                key={item.code}
+                onPress={() => chooseProvince(item)}
+                className="rounded-full border border-white/35 px-3 py-1.5"
+              >
                 <Text className="text-[12px] font-bold text-white">{item.name}</Text>
               </Pressable>
             ))}
@@ -240,8 +259,14 @@ export default function ExploreScreen() {
 
       {groups.length > 0 ? (
         <View className="mt-5">
-          <Text className="mb-2 text-[16px] font-extrabold text-[#204346]">Điều gì khiến bạn hứng thú?</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <Text className="mb-2 text-[16px] font-extrabold text-[#204346]">
+            Điều gì khiến bạn hứng thú?
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8 }}
+          >
             {groups.map((group) => (
               <Chip
                 key={group.code}
@@ -264,7 +289,8 @@ export default function ExploreScreen() {
             {loading ? 'Đang tải…' : `${visiblePlaces.length} / ${total} địa điểm`}
           </Text>
         </View>
-        <Pressable
+        <ScalePressable
+          scaleTo={0.94}
           onPress={() => setFiltersOpen(true)}
           className="flex-row items-center gap-1.5 rounded-xl border border-[#DEE8E3] bg-white px-3 py-2.5"
         >
@@ -275,7 +301,7 @@ export default function ExploreScreen() {
               <Text className="text-[10px] font-bold text-white">{activeFilters}</Text>
             </View>
           ) : null}
-        </Pressable>
+        </ScalePressable>
       </View>
     </View>
   );
@@ -288,14 +314,23 @@ export default function ExploreScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 14 }}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={header}
-        renderItem={({ item }) => (
-          <PlaceCard place={item} onPress={() => navigation.navigate('PlaceDetail', { placeId: item.id })} />
+        renderItem={({ item, index }) => (
+          <FadeInView delay={Math.min(index, 5) * 45} offset={10} duration={240}>
+            <PlaceCard
+              place={item}
+              onPress={() => navigation.navigate('PlaceDetail', { placeId: item.id })}
+            />
+          </FadeInView>
         )}
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
           loading ? (
-            <Loading label="Đang tải địa điểm…" />
+            <View className="gap-3.5">
+              <PlaceCardSkeleton />
+              <PlaceCardSkeleton />
+              <PlaceCardSkeleton />
+            </View>
           ) : loadError ? (
             <ErrorState message={loadError} onRetry={() => setRetry((n) => n + 1)} />
           ) : (
@@ -346,7 +381,12 @@ export default function ExploreScreen() {
         <Text className="mb-2 text-[13px] font-extrabold text-[#355C58]">Sắp xếp</Text>
         <View className="mb-4 flex-row flex-wrap gap-2">
           {SORTS.map((item) => (
-            <Chip key={item.value} label={item.label} selected={sortMode === item.value} onPress={() => setSortMode(item.value)} />
+            <Chip
+              key={item.value}
+              label={item.label}
+              selected={sortMode === item.value}
+              onPress={() => setSortMode(item.value)}
+            />
           ))}
         </View>
         <Text className="mb-2 text-[13px] font-extrabold text-[#355C58]">Đánh giá tối thiểu</Text>
@@ -361,8 +401,12 @@ export default function ExploreScreen() {
             />
           ))}
         </View>
-        <Text className="mb-4 text-[11px] text-[#90A39A]">Lọc đánh giá trên các địa điểm đã tải.</Text>
-        <Text className="mb-2 text-[13px] font-extrabold text-[#355C58]">Loại hình trải nghiệm</Text>
+        <Text className="mb-4 text-[11px] text-[#90A39A]">
+          Lọc đánh giá trên các địa điểm đã tải.
+        </Text>
+        <Text className="mb-2 text-[13px] font-extrabold text-[#355C58]">
+          Loại hình trải nghiệm
+        </Text>
         {groups.map((group) => (
           <View key={group.code} className="mb-3">
             <Text className="mb-1.5 text-[12px] font-bold text-[#557080]">{group.name}</Text>

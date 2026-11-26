@@ -1,5 +1,12 @@
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useRef, useState, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { colors } from '../theme';
 import { Icon, type IconName } from './Icon';
 import { Text } from './Typography';
@@ -15,14 +22,27 @@ const VARIANT: Record<Variant, { bg: string; fg: string; border?: string }> = {
 };
 
 /**
- * Trạng thái đang bấm giữ bằng state: NativeWind bỏ qua style dạng hàm `({ pressed }) => …` của
- * Pressable (nút sẽ mất màu nền, chữ trắng trên nền trắng) nên không dùng kiểu đó.
+ * Trạng thái đang bấm giữ + nhún lò xo mượt (scale 0.965):
+ * NativeWind bỏ qua style dạng hàm `({ pressed }) => …` của Pressable nên dùng state + Animated.
  */
-function usePressed() {
+function usePressed(scaleTo = 0.965) {
   const [pressed, setPressed] = useState(false);
+  const scale = useRef(new Animated.Value(1)).current;
+  const spring = (toValue: number) =>
+    Animated.spring(scale, { toValue, useNativeDriver: true, speed: 38, bounciness: 6 }).start();
   return {
     pressed,
-    handlers: { onPressIn: () => setPressed(true), onPressOut: () => setPressed(false) },
+    scale,
+    handlers: {
+      onPressIn: () => {
+        setPressed(true);
+        spring(scaleTo);
+      },
+      onPressOut: () => {
+        setPressed(false);
+        spring(1);
+      },
+    },
   };
 }
 
@@ -52,50 +72,52 @@ export function Button({
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
-  const { pressed, handlers } = usePressed();
+  const { pressed, scale, handlers } = usePressed();
   const v = VARIANT[variant];
   const height = size === 'sm' ? 38 : size === 'lg' ? 54 : 48;
   const fontSize = size === 'sm' ? 12.5 : size === 'lg' ? 15 : 14;
   const inactive = disabled || loading;
   const background = inactive && variant === 'primary' && !loading ? '#A9D9E5' : v.bg;
   return (
-    <Pressable
-      onPress={onPress}
-      {...handlers}
-      disabled={inactive}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: inactive, busy: loading }}
-      style={[
-        {
+    <Animated.View
+      style={[{ transform: [{ scale }], alignSelf: full ? 'stretch' : 'flex-start' }, style]}
+    >
+      <Pressable
+        onPress={onPress}
+        {...handlers}
+        disabled={inactive}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: inactive, busy: loading }}
+        style={{
           height,
           borderRadius: height / 2,
           backgroundColor: background,
           borderWidth: v.border ? 1 : 0,
           borderColor: v.border,
           paddingHorizontal: size === 'sm' ? 14 : 20,
-          alignSelf: full ? 'stretch' : 'flex-start',
-          opacity: pressed ? 0.85 : inactive && variant !== 'primary' ? 0.55 : 1,
+          opacity: pressed ? 0.9 : inactive && variant !== 'primary' ? 0.55 : 1,
           alignItems: 'center',
           justifyContent: 'center',
-        },
-        style,
-      ]}
-    >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        {loading ? (
-          <ActivityIndicator size="small" color={v.fg} />
-        ) : icon ? (
-          <Icon name={icon} size={fontSize + 5} color={v.fg} />
-        ) : null}
-        {title ? (
-          <Text style={{ color: v.fg, fontSize, fontWeight: '800' }} numberOfLines={1}>
-            {title}
-          </Text>
-        ) : null}
-        {children}
-        {iconRight && !loading ? <Icon name={iconRight} size={fontSize + 5} color={v.fg} /> : null}
-      </View>
-    </Pressable>
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {loading ? (
+            <ActivityIndicator size="small" color={v.fg} />
+          ) : icon ? (
+            <Icon name={icon} size={fontSize + 5} color={v.fg} />
+          ) : null}
+          {title ? (
+            <Text style={{ color: v.fg, fontSize, fontWeight: '800' }} numberOfLines={1}>
+              {title}
+            </Text>
+          ) : null}
+          {children}
+          {iconRight && !loading ? (
+            <Icon name={iconRight} size={fontSize + 5} color={v.fg} />
+          ) : null}
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -117,27 +139,29 @@ export function IconButton({
   size?: number;
   disabled?: boolean;
 }) {
-  const { pressed, handlers } = usePressed();
+  const { pressed, scale, handlers } = usePressed(0.9);
   return (
-    <Pressable
-      onPress={onPress}
-      {...handlers}
-      disabled={disabled}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: background,
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
-      }}
-    >
-      <Icon name={icon} size={Math.round(size * 0.52)} color={color} />
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        onPress={onPress}
+        {...handlers}
+        disabled={disabled}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: background,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: disabled ? 0.45 : pressed ? 0.85 : 1,
+        }}
+      >
+        <Icon name={icon} size={Math.round(size * 0.52)} color={color} />
+      </Pressable>
+    </Animated.View>
   );
 }
 

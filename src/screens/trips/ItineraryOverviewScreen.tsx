@@ -21,7 +21,8 @@ import { Avatar, Stars } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
-import { EmptyState, Loading, Notice } from '../../ui/States';
+import { EmptyState, Notice } from '../../ui/States';
+import { ListCardSkeleton } from '../../ui/Motion';
 import { formatDate, formatNumber, formatTime } from '../../utils/format';
 import { PLAN_STATUS_INFO } from '../../utils/planStatus';
 
@@ -44,7 +45,15 @@ function SummaryCard({ icon, label, value }: { icon: IconName; label: string; va
   );
 }
 
-function BudgetCard({ total, budget, currency }: { total: number; budget: number | null | undefined; currency: string }) {
+function BudgetCard({
+  total,
+  budget,
+  currency,
+}: {
+  total: number;
+  budget: number | null | undefined;
+  currency: string;
+}) {
   const difference = budget == null ? null : budget - total;
   const percent = budget != null && budget > 0 ? (total / budget) * 100 : null;
   const over = difference != null && difference < 0;
@@ -63,23 +72,36 @@ function BudgetCard({ total, budget, currency }: { total: number; budget: number
       {percent !== null ? (
         <View className="mt-2.5">
           <View className="h-2 overflow-hidden rounded-full bg-[#E6EEF0]">
-            <View style={{ width: `${Math.min(100, Math.max(0, percent))}%`, height: '100%', backgroundColor: over ? '#C66B42' : colors.primary }} />
+            <View
+              style={{
+                width: `${Math.min(100, Math.max(0, percent))}%`,
+                height: '100%',
+                backgroundColor: over ? '#C66B42' : colors.primary,
+              }}
+            />
           </View>
-          <Text className="mt-1.5 text-[11.5px] text-[#61757A]">{Math.round(percent)}% ngân sách dự kiến</Text>
+          <Text className="mt-1.5 text-[11.5px] text-[#61757A]">
+            {Math.round(percent)}% ngân sách dự kiến
+          </Text>
         </View>
       ) : null}
       {difference !== null ? (
         <View className={`mt-3 rounded-2xl p-3 ${over ? 'bg-[#FFF1EB]' : 'bg-[#ECF7F9]'}`}>
-          <Text className={`text-[11.5px] font-semibold ${over ? 'text-[#9A472D]' : 'text-[#0E7490]'}`}>
+          <Text
+            className={`text-[11.5px] font-semibold ${over ? 'text-[#9A472D]' : 'text-[#0E7490]'}`}
+          >
             {over ? 'Vượt ngân sách dự kiến' : 'Còn lại so với ngân sách'}
           </Text>
-          <Text className={`text-[17px] font-extrabold ${over ? 'text-[#9A472D]' : 'text-[#0E7490]'}`}>
+          <Text
+            className={`text-[17px] font-extrabold ${over ? 'text-[#9A472D]' : 'text-[#0E7490]'}`}
+          >
             {money(Math.abs(difference), currency)}
           </Text>
         </View>
       ) : null}
       <Text className="mt-3 text-[11px] leading-[17px] text-[#61757A]">
-        Chi phí chỉ là ước tính; có thể chưa bao gồm lưu trú, ăn uống, đi lại và các dịch vụ chưa có giá.
+        Chi phí chỉ là ước tính; có thể chưa bao gồm lưu trú, ăn uống, đi lại và các dịch vụ chưa có
+        giá.
       </Text>
     </View>
   );
@@ -101,8 +123,12 @@ function DayCard({
     <View style={shadow.card} className="overflow-hidden rounded-3xl bg-white">
       <View className="flex-row items-center gap-3 border-b border-[#E9EFEF] p-4">
         <View className="h-14 w-14 items-center justify-center rounded-2xl bg-[#0E7490] px-3 py-1.5">
-          <Text className="text-[8.5px] font-semibold uppercase tracking-[1.5px] text-[#C0EAEF]">Ngày</Text>
-          <Text className="text-[19px] font-extrabold leading-6 text-white">{String(day.dayNumber).padStart(2, '0')}</Text>
+          <Text className="text-[8.5px] font-semibold uppercase tracking-[1.5px] text-[#C0EAEF]">
+            Ngày
+          </Text>
+          <Text className="text-[19px] font-extrabold leading-6 text-white">
+            {String(day.dayNumber).padStart(2, '0')}
+          </Text>
         </View>
         <View className="min-w-0 flex-1">
           <Text numberOfLines={1} className="text-[15.5px] font-extrabold text-[#163142]">
@@ -114,10 +140,16 @@ function DayCard({
         </View>
         <View className="items-end">
           <Text className="text-[10.5px] text-[#61757A]">Chi phí</Text>
-          <Text className="text-[12.5px] font-extrabold text-[#0891B2]">{money(day.estimatedCost, currency)}</Text>
+          <Text className="text-[12.5px] font-extrabold text-[#0891B2]">
+            {money(day.estimatedCost, currency)}
+          </Text>
         </View>
       </View>
-      {day.notes ? <Text className="mx-4 mt-3 rounded-xl bg-[#F5F8F8] p-3 text-[11.5px] leading-5 text-[#506775]">{day.notes}</Text> : null}
+      {day.notes ? (
+        <Text className="mx-4 mt-3 rounded-xl bg-[#F5F8F8] p-3 text-[11.5px] leading-5 text-[#506775]">
+          {day.notes}
+        </Text>
+      ) : null}
 
       {activities.length === 0 ? (
         <View className="items-center px-5 py-8">
@@ -133,7 +165,9 @@ function DayCard({
                 <View className="h-8 w-8 items-center justify-center rounded-full border border-[#CCE4E6] bg-[#ECF7F9]">
                   <Text className="text-[12px] font-extrabold text-[#0891B2]">{index + 1}</Text>
                 </View>
-                {index < activities.length - 1 ? <View className="mt-1 w-0.5 flex-1 bg-[#DCEBEC]" /> : null}
+                {index < activities.length - 1 ? (
+                  <View className="mt-1 w-0.5 flex-1 bg-[#DCEBEC]" />
+                ) : null}
               </View>
               <View className="min-w-0 flex-1">
                 {activity.travelTimeMinutes != null && activity.travelTimeMinutes > 0 ? (
@@ -153,15 +187,26 @@ function DayCard({
                         {formatTime(activity.startTime)} – {formatTime(activity.endTime)}
                       </Text>
                     </View>
-                    <Text className="text-[11.5px] font-bold text-[#163142]">{money(activity.estimatedCost, currency)}</Text>
+                    <Text className="text-[11.5px] font-bold text-[#163142]">
+                      {money(activity.estimatedCost, currency)}
+                    </Text>
                   </View>
-                  <Text className="mt-2 text-[14.5px] font-extrabold leading-5 text-[#163142]">{activity.placeName}</Text>
+                  <Text className="mt-2 text-[14.5px] font-extrabold leading-5 text-[#163142]">
+                    {activity.placeName}
+                  </Text>
                   {activity.placeAddress ? (
-                    <Text numberOfLines={2} className="mt-1 text-[11.5px] leading-[17px] text-[#61757A]">
+                    <Text
+                      numberOfLines={2}
+                      className="mt-1 text-[11.5px] leading-[17px] text-[#61757A]"
+                    >
                       {activity.placeAddress}
                     </Text>
                   ) : null}
-                  {activity.notes ? <Text className="mt-2 rounded-lg bg-[#F0F5F5] p-2.5 text-[11.5px] leading-[17px] text-[#506775]">{activity.notes}</Text> : null}
+                  {activity.notes ? (
+                    <Text className="mt-2 rounded-lg bg-[#F0F5F5] p-2.5 text-[11.5px] leading-[17px] text-[#506775]">
+                      {activity.notes}
+                    </Text>
+                  ) : null}
                   {onEdit && activity.status === 'PLANNED' ? (
                     <View className="mt-3 flex-row flex-wrap gap-2 border-t border-[#E5EDED] pt-2.5">
                       {(
@@ -177,7 +222,9 @@ function DayCard({
                           className="flex-row items-center gap-1 rounded-lg border border-[#DCE9E5] bg-white px-2.5 py-1.5"
                         >
                           <Icon name={action.icon} size={15} color="#086B60" />
-                          <Text className="text-[11px] font-semibold text-[#086B60]">{action.label}</Text>
+                          <Text className="text-[11px] font-semibold text-[#086B60]">
+                            {action.label}
+                          </Text>
                         </Pressable>
                       ))}
                     </View>
@@ -189,10 +236,15 @@ function DayCard({
         </View>
       )}
       <View className="border-t border-[#E9EFED] p-3">
-        <Pressable onPress={onOpen} className="flex-row items-center justify-between rounded-xl bg-[#F0F7F4] px-4 py-3">
+        <Pressable
+          onPress={onOpen}
+          className="flex-row items-center justify-between rounded-xl bg-[#F0F7F4] px-4 py-3"
+        >
           <View className="flex-row items-center gap-2">
             <Icon name="map" size={18} color="#086B60" />
-            <Text className="text-[13px] font-bold text-[#086B60]">Xem chi tiết ngày {day.dayNumber}</Text>
+            <Text className="text-[13px] font-bold text-[#086B60]">
+              Xem chi tiết ngày {day.dayNumber}
+            </Text>
           </View>
           <Icon name="arrow-forward" size={18} color="#086B60" />
         </Pressable>
@@ -202,7 +254,10 @@ function DayCard({
 }
 
 /** Tổng quan lịch trình — giống ItineraryOverviewPage của web */
-export default function ItineraryOverviewScreen({ navigation, route }: RootScreenProps<'Itinerary'>) {
+export default function ItineraryOverviewScreen({
+  navigation,
+  route,
+}: RootScreenProps<'Itinerary'>) {
   const { planId } = route.params;
   const { user } = useAuth();
   const [creationWarnings, setCreationWarnings] = useState<string[]>(route.params.warnings ?? []);
@@ -212,7 +267,11 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
   const [notFound, setNotFound] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [planStatus, setPlanStatus] = useState<PlanStatus | null>(null);
-  const [editTarget, setEditTarget] = useState<{ day: ItineraryOverviewDay; activity: ItineraryActivity; mode: EditMode } | null>(null);
+  const [editTarget, setEditTarget] = useState<{
+    day: ItineraryOverviewDay;
+    activity: ItineraryActivity;
+    mode: EditMode;
+  } | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [tripFeedback, setTripFeedback] = useState<TripFeedbackResponse | null>(null);
@@ -252,9 +311,13 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
     }, [planId, retryCount]),
   );
 
-  const days = useMemo(() => [...(overview?.days ?? [])].sort((a, b) => a.dayNumber - b.dayNumber), [overview]);
+  const days = useMemo(
+    () => [...(overview?.days ?? [])].sort((a, b) => a.dayNumber - b.dayNumber),
+    [overview],
+  );
   const totalActivities = days.reduce((sum, day) => sum + day.activities.length, 0);
-  const canEdit = (planStatus === 'DRAFT' || planStatus === 'PLANNED') && overview?.status === 'ACTIVE';
+  const canEdit =
+    (planStatus === 'DRAFT' || planStatus === 'PLANNED') && overview?.status === 'ACTIVE';
   const currency = overview?.currency ?? 'VND';
 
   const header = (
@@ -263,7 +326,10 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
       subtitle={overview?.destination}
       onBack={() => navigation.goBack()}
       right={
-        <Pressable onPress={() => navigation.navigate('Tabs', { screen: 'Trips' })} className="rounded-full bg-[#ECFEFF] px-3 py-2">
+        <Pressable
+          onPress={() => navigation.navigate('Tabs', { screen: 'Trips' })}
+          className="rounded-full bg-[#ECFEFF] px-3 py-2"
+        >
           <Text className="text-[11.5px] font-bold text-[#0E7490]">Chuyến đi</Text>
         </Pressable>
       }
@@ -273,7 +339,7 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
   if (loading && !overview) {
     return (
       <Screen header={header}>
-        <Loading label="Đang tải lịch trình..." />
+        <ListCardSkeleton count={4} />
       </Screen>
     );
   }
@@ -287,12 +353,19 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
           message={
             notFound
               ? 'Kế hoạch này chưa có lịch trình đang dùng. Hãy kiểm tra địa điểm đã chọn và tạo lịch trình.'
-              : error ?? undefined
+              : (error ?? undefined)
           }
           action={
             <View className="gap-2.5">
-              <Button title="Thử tải lại" variant="outline" onPress={() => setRetryCount((n) => n + 1)} />
-              <Button title="Xem địa điểm đã chọn" onPress={() => navigation.navigate('SelectedPlaces', { planId })} />
+              <Button
+                title="Thử tải lại"
+                variant="outline"
+                onPress={() => setRetryCount((n) => n + 1)}
+              />
+              <Button
+                title="Xem địa điểm đã chọn"
+                onPress={() => navigation.navigate('SelectedPlaces', { planId })}
+              />
             </View>
           }
         />
@@ -306,14 +379,20 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
         <View className="mb-3 flex-row gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3">
           <Icon name="warning" size={20} color="#D97706" />
           <View className="min-w-0 flex-1">
-            <Text className="text-[12.5px] font-extrabold text-amber-900">Lịch trình đã được tạo, nhưng có vài điểm cần lưu ý</Text>
+            <Text className="text-[12.5px] font-extrabold text-amber-900">
+              Lịch trình đã được tạo, nhưng có vài điểm cần lưu ý
+            </Text>
             {creationWarnings.map((warning, index) => (
               <Text key={index} className="mt-1 text-[12px] leading-[18px] text-amber-900">
                 {warning}
               </Text>
             ))}
           </View>
-          <Pressable onPress={() => setCreationWarnings([])} hitSlop={8} accessibilityLabel="Đóng cảnh báo">
+          <Pressable
+            onPress={() => setCreationWarnings([])}
+            hitSlop={8}
+            accessibilityLabel="Đóng cảnh báo"
+          >
             <Icon name="close" size={18} color="#92400E" />
           </Pressable>
         </View>
@@ -322,9 +401,13 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
       <View className="overflow-hidden rounded-[26px] bg-[#12344A] p-5">
         <View className="flex-row items-center gap-1.5">
           <Icon name="route" size={18} color="#BCE6EB" />
-          <Text className="text-[11px] font-semibold tracking-[1.2px] text-[#BCE6EB]">HÀNH TRÌNH CỦA BẠN</Text>
+          <Text className="text-[11px] font-semibold tracking-[1.2px] text-[#BCE6EB]">
+            HÀNH TRÌNH CỦA BẠN
+          </Text>
         </View>
-        <Text className="mt-2 text-[23px] font-extrabold leading-7 text-white">{overview.itineraryTitle}</Text>
+        <Text className="mt-2 text-[23px] font-extrabold leading-7 text-white">
+          {overview.itineraryTitle}
+        </Text>
         <View className="mt-3 gap-1">
           <View className="flex-row items-center gap-1.5">
             <Icon name="location-on" size={16} color="#DFF2F4" />
@@ -337,7 +420,11 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
             </Text>
           </View>
         </View>
-        {overview.itineraryNotes ? <Text className="mt-3 text-[12.5px] leading-5 text-[#D4EDEF]">{overview.itineraryNotes}</Text> : null}
+        {overview.itineraryNotes ? (
+          <Text className="mt-3 text-[12.5px] leading-5 text-[#D4EDEF]">
+            {overview.itineraryNotes}
+          </Text>
+        ) : null}
         <View className="mt-4 flex-row items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-3.5 py-2.5">
           <View className="flex-row items-center gap-1.5">
             <Icon name="event-available" size={17} color="#D3EDF0" />
@@ -354,20 +441,33 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
       <View className="mt-4 flex-row flex-wrap justify-between gap-y-2.5">
         <SummaryCard icon="calendar-month" label="Thời lượng" value={`${days.length} ngày`} />
         <SummaryCard icon="place" label="Hoạt động" value={`${totalActivities} địa điểm`} />
-        <SummaryCard icon="account-balance-wallet" label="Chi phí dự kiến" value={money(overview.totalEstimatedCost, currency)} />
+        <SummaryCard
+          icon="account-balance-wallet"
+          label="Chi phí dự kiến"
+          value={money(overview.totalEstimatedCost, currency)}
+        />
         <SummaryCard icon="savings" label="Ngân sách" value={money(overview.budget, currency)} />
       </View>
 
-      <BudgetCard total={overview.totalEstimatedCost} budget={overview.budget} currency={currency} />
+      <BudgetCard
+        total={overview.totalEstimatedCost}
+        budget={overview.budget}
+        currency={currency}
+      />
 
       <View className="mb-3 mt-6 flex-row items-end justify-between">
         <View className="min-w-0 flex-1">
           <Text className="text-[19px] font-extrabold text-[#163142]">Lịch trình từng ngày</Text>
           <Text className="text-[12px] text-[#61757A]">
-            {canEdit ? 'Tùy chỉnh từng điểm dừng theo cách của bạn.' : 'Theo dõi các điểm dừng trong hành trình.'}
+            {canEdit
+              ? 'Tùy chỉnh từng điểm dừng theo cách của bạn.'
+              : 'Theo dõi các điểm dừng trong hành trình.'}
           </Text>
         </View>
-        <Pressable onPress={() => navigation.navigate('SelectedPlaces', { planId })} className="flex-row items-center gap-1 rounded-xl border border-[#DCE8E6] bg-white px-2.5 py-2">
+        <Pressable
+          onPress={() => navigation.navigate('SelectedPlaces', { planId })}
+          className="flex-row items-center gap-1 rounded-xl border border-[#DCE8E6] bg-white px-2.5 py-2"
+        >
           <Icon name="format-list-bulleted" size={16} color="#086B60" />
           <Text className="text-[11.5px] font-bold text-[#086B60]">Đã chọn</Text>
         </Pressable>
@@ -377,7 +477,9 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
 
       {days.length === 0 ? (
         <View className="rounded-3xl bg-white p-8">
-          <Text className="text-center text-[13px] text-[#61757A]">Lịch trình chưa có ngày hoặc hoạt động nào.</Text>
+          <Text className="text-center text-[13px] text-[#61757A]">
+            Lịch trình chưa có ngày hoặc hoạt động nào.
+          </Text>
         </View>
       ) : (
         <View className="gap-4">
@@ -387,7 +489,9 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
                 day={day}
                 currency={currency}
                 onOpen={() => navigation.navigate('ItineraryDay', { planId, day: day.dayNumber })}
-                onEdit={canEdit ? (activity, mode) => setEditTarget({ day, activity, mode }) : undefined}
+                onEdit={
+                  canEdit ? (activity, mode) => setEditTarget({ day, activity, mode }) : undefined
+                }
               />
             </View>
           ))}
@@ -417,10 +521,20 @@ export default function ItineraryOverviewScreen({ navigation, route }: RootScree
             <Icon name="verified" size={15} color={colors.primary} />
             <Text className="text-[12px] font-bold text-[#0891B2]">Đánh giá của bạn</Text>
           </View>
-          {tripFeedback.comment ? <Text className="mt-1.5 text-[12.5px] leading-5 text-[#506775]">“{tripFeedback.comment}”</Text> : null}
+          {tripFeedback.comment ? (
+            <Text className="mt-1.5 text-[12.5px] leading-5 text-[#506775]">
+              “{tripFeedback.comment}”
+            </Text>
+          ) : null}
         </View>
       ) : planStatus === 'COMPLETED' ? (
-        <Button title="Đánh giá chuyến đi" icon="star" variant="secondary" style={{ marginTop: 16 }} onPress={() => setShowFeedback(true)} />
+        <Button
+          title="Đánh giá chuyến đi"
+          icon="star"
+          variant="secondary"
+          style={{ marginTop: 16 }}
+          onPress={() => setShowFeedback(true)}
+        />
       ) : null}
 
       <EditActivitySheet

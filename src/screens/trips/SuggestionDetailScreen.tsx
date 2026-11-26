@@ -15,6 +15,7 @@ import { Button } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
 import { ErrorState, Loading, Notice } from '../../ui/States';
+import { PlaceDetailSkeleton } from '../../ui/Motion';
 import { formatDate, PRICE_TYPE_LABEL, WEEKDAY_LABEL } from '../../utils/format';
 
 type DetailTab = 'intro' | 'photos' | 'contact' | 'reviews';
@@ -25,24 +26,46 @@ const TABS: { id: DetailTab; label: string }[] = [
   { id: 'reviews', label: 'Đánh giá' },
 ];
 
-const money = (amount: number) => (amount === 0 ? 'Miễn phí' : `${Math.round(amount).toLocaleString('vi-VN')}đ`);
+const money = (amount: number) =>
+  amount === 0 ? 'Miễn phí' : `${Math.round(amount).toLocaleString('vi-VN')}đ`;
 
-function ContactRow({ icon, label, value, onPress }: { icon: IconName; label: string; value: string; onPress?: () => void }) {
+function ContactRow({
+  icon,
+  label,
+  value,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+  onPress?: () => void;
+}) {
   return (
-    <Pressable onPress={onPress} disabled={!onPress} className="flex-row items-center gap-3 border-b border-[#EEF1F4] py-3">
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      className="flex-row items-center gap-3 border-b border-[#EEF1F4] py-3"
+    >
       <View className="h-9 w-9 items-center justify-center rounded-xl bg-[#ECFEFF]">
         <Icon name={icon} size={18} color={colors.primary} />
       </View>
       <View className="min-w-0 flex-1">
         <Text className="text-[11px] text-[#72818C]">{label}</Text>
-        <Text className={`text-[13.5px] font-semibold ${onPress ? 'text-[#0891B2]' : 'text-[#13364A]'}`}>{value}</Text>
+        <Text
+          className={`text-[13.5px] font-semibold ${onPress ? 'text-[#0891B2]' : 'text-[#13364A]'}`}
+        >
+          {value}
+        </Text>
       </View>
     </Pressable>
   );
 }
 
 /** Chi tiết một địa điểm trong luồng chọn của kế hoạch — giống SuggestionDetailPage của web */
-export default function SuggestionDetailScreen({ navigation, route }: RootScreenProps<'SuggestionDetail'>) {
+export default function SuggestionDetailScreen({
+  navigation,
+  route,
+}: RootScreenProps<'SuggestionDetail'>) {
   const { planId, placeId } = route.params;
   const width = Dimensions.get('window').width - 32;
   const [plan, setPlan] = useState<TravelPlanResponse | null>(null);
@@ -63,7 +86,11 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
     let active = true;
     setLoading(true);
     setError(null);
-    Promise.all([tripFlowApi.plan(planId), placesApi.get(placeId), tripFlowApi.selectedPlaces(planId)])
+    Promise.all([
+      tripFlowApi.plan(planId),
+      placesApi.get(placeId),
+      tripFlowApi.selectedPlaces(planId),
+    ])
       .then(([savedPlan, detail, selected]) => {
         if (!active) return;
         setPlan(savedPlan);
@@ -88,7 +115,9 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
 
   const photos = useMemo(() => {
     if (!place) return [] as string[];
-    const links = [...place.images].sort((a, b) => Number(b.primary) - Number(a.primary)).map((image) => image.url);
+    const links = [...place.images]
+      .sort((a, b) => Number(b.primary) - Number(a.primary))
+      .map((image) => image.url);
     if (place.summary.coverUrl) links.push(place.summary.coverUrl);
     return [...new Set(links.filter(Boolean))];
   }, [place]);
@@ -110,26 +139,33 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
     }
   };
 
-  const header = <Header title="Chi tiết địa điểm" subtitle={plan?.title} onBack={() => navigation.goBack()} />;
+  const header = (
+    <Header title="Chi tiết địa điểm" subtitle={plan?.title} onBack={() => navigation.goBack()} />
+  );
 
   if (loading) {
     return (
       <Screen header={header}>
-        <Loading />
+        <PlaceDetailSkeleton />
       </Screen>
     );
   }
   if (error || !place) {
     return (
       <Screen header={header}>
-        <ErrorState message={error ?? 'Không tải được địa điểm.'} onRetry={() => setRetryCount((n) => n + 1)} />
+        <ErrorState
+          message={error ?? 'Không tải được địa điểm.'}
+          onRetry={() => setRetryCount((n) => n + 1)}
+        />
       </Screen>
     );
   }
 
   const summary = place.summary;
   const openingHours = [...place.openingHours].sort((a, b) => a.dayOfWeek - b.dayOfWeek);
-  const minPrice = place.prices.length ? [...place.prices].sort((a, b) => a.amount - b.amount)[0] : null;
+  const minPrice = place.prices.length
+    ? [...place.prices].sort((a, b) => a.amount - b.amount)[0]
+    : null;
 
   return (
     <Screen
@@ -140,7 +176,13 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
           <View className="flex-row gap-2.5">
             <View className="flex-1">
               <Button
-                title={busy ? 'Đang cập nhật...' : inPlan ? 'Đã chọn · Bỏ khỏi kế hoạch' : 'Thêm vào kế hoạch'}
+                title={
+                  busy
+                    ? 'Đang cập nhật...'
+                    : inPlan
+                      ? 'Đã chọn · Bỏ khỏi kế hoạch'
+                      : 'Thêm vào kế hoạch'
+                }
                 icon={inPlan ? 'check-circle' : 'add'}
                 variant={inPlan ? 'secondary' : 'primary'}
                 loading={busy}
@@ -158,13 +200,17 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
         </View>
       }
     >
-      <View style={{ height: 230, borderRadius: 22, overflow: 'hidden', backgroundColor: '#CEE7EA' }}>
+      <View
+        style={{ height: 230, borderRadius: 22, overflow: 'hidden', backgroundColor: '#CEE7EA' }}
+      >
         {photos.length > 0 ? (
           <ScrollView
             horizontal
             pagingEnabled
             showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(event) => setImageIndex(Math.round(event.nativeEvent.contentOffset.x / width))}
+            onMomentumScrollEnd={(event) =>
+              setImageIndex(Math.round(event.nativeEvent.contentOffset.x / width))
+            }
           >
             {photos.map((url, index) => (
               <Pressable key={url} onPress={() => setViewerIndex(index)}>
@@ -200,7 +246,9 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
       </View>
       <View className="mt-2 flex-row items-start gap-1">
         <Icon name="location-on" size={16} color={colors.muted} />
-        <Text className="flex-1 text-[12.5px] text-[#557080]">{summary.address ?? 'Chưa cập nhật địa chỉ'}</Text>
+        <Text className="flex-1 text-[12.5px] text-[#557080]">
+          {summary.address ?? 'Chưa cập nhật địa chỉ'}
+        </Text>
       </View>
 
       <View className="mt-4 flex-row rounded-2xl bg-[#EEF5F7] p-1">
@@ -210,7 +258,11 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
             onPress={() => setTab(item.id)}
             className={`flex-1 items-center rounded-xl py-2 ${tab === item.id ? 'bg-white' : ''}`}
           >
-            <Text className={`text-[12.5px] font-bold ${tab === item.id ? 'text-[#0E7490]' : 'text-[#72818C]'}`}>{item.label}</Text>
+            <Text
+              className={`text-[12.5px] font-bold ${tab === item.id ? 'text-[#0E7490]' : 'text-[#72818C]'}`}
+            >
+              {item.label}
+            </Text>
           </Pressable>
         ))}
       </View>
@@ -223,26 +275,41 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
             </Text>
             {place.prices.length > 0 ? (
               <>
-                <Text className="mb-1.5 mt-4 text-[14px] font-extrabold text-[#13364A]">Giá tham khảo</Text>
+                <Text className="mb-1.5 mt-4 text-[14px] font-extrabold text-[#13364A]">
+                  Giá tham khảo
+                </Text>
                 {place.prices.map((price, idx) => (
-                  <View key={`${price.priceType}-${idx}`} className="flex-row justify-between py-1.5">
+                  <View
+                    key={`${price.priceType}-${idx}`}
+                    className="flex-row justify-between py-1.5"
+                  >
                     <Text className="flex-1 text-[12.5px] text-[#3B4B57]">
                       {price.description ?? PRICE_TYPE_LABEL[price.priceType] ?? 'Giá'}
                     </Text>
-                    <Text className="text-[12.5px] font-extrabold text-[#0E7490]">{money(price.amount)}</Text>
+                    <Text className="text-[12.5px] font-extrabold text-[#0E7490]">
+                      {money(price.amount)}
+                    </Text>
                   </View>
                 ))}
               </>
             ) : null}
-            <Text className="mb-1.5 mt-4 text-[14px] font-extrabold text-[#13364A]">Giờ mở cửa</Text>
+            <Text className="mb-1.5 mt-4 text-[14px] font-extrabold text-[#13364A]">
+              Giờ mở cửa
+            </Text>
             {openingHours.length === 0 ? (
               <Text className="text-[12.5px] text-[#72818C]">Chưa cập nhật</Text>
             ) : (
               openingHours.map((hour) => (
                 <View key={hour.dayOfWeek} className="flex-row justify-between py-1">
-                  <Text className="text-[12.5px] text-[#3B4B57]">{WEEKDAY_LABEL[hour.dayOfWeek]}</Text>
-                  <Text className={`text-[12.5px] font-semibold ${hour.closed ? 'text-[#C2412D]' : 'text-[#13364A]'}`}>
-                    {hour.closed ? 'Đóng cửa' : `${hour.openTime ?? '--'} - ${hour.closeTime ?? '--'}`}
+                  <Text className="text-[12.5px] text-[#3B4B57]">
+                    {WEEKDAY_LABEL[hour.dayOfWeek]}
+                  </Text>
+                  <Text
+                    className={`text-[12.5px] font-semibold ${hour.closed ? 'text-[#C2412D]' : 'text-[#13364A]'}`}
+                  >
+                    {hour.closed
+                      ? 'Đóng cửa'
+                      : `${hour.openTime ?? '--'} - ${hour.closeTime ?? '--'}`}
                   </Text>
                 </View>
               ))
@@ -252,10 +319,15 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
 
         {tab === 'photos' ? (
           <View className="flex-row flex-wrap justify-between gap-y-2">
-            {photos.length === 0 ? <Text className="text-[12.5px] text-[#72818C]">Chưa có ảnh.</Text> : null}
+            {photos.length === 0 ? (
+              <Text className="text-[12.5px] text-[#72818C]">Chưa có ảnh.</Text>
+            ) : null}
             {photos.map((url, index) => (
               <Pressable key={url} onPress={() => setViewerIndex(index)} className="w-[49%]">
-                <Image source={{ uri: url }} style={{ width: '100%', height: 110, borderRadius: 12 }} />
+                <Image
+                  source={{ uri: url }}
+                  style={{ width: '100%', height: 110, borderRadius: 12 }}
+                />
               </Pressable>
             ))}
           </View>
@@ -263,12 +335,20 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
 
         {tab === 'contact' ? (
           <View>
-            <ContactRow icon="location-on" label="Địa chỉ" value={summary.address ?? 'Chưa cập nhật'} />
+            <ContactRow
+              icon="location-on"
+              label="Địa chỉ"
+              value={summary.address ?? 'Chưa cập nhật'}
+            />
             <ContactRow
               icon="call"
               label="Điện thoại"
               value={place.phone ?? 'Chưa cập nhật'}
-              onPress={place.phone ? () => void Linking.openURL(`tel:${place.phone?.replace(/\s+/g, '')}`) : undefined}
+              onPress={
+                place.phone
+                  ? () => void Linking.openURL(`tel:${place.phone?.replace(/\s+/g, '')}`)
+                  : undefined
+              }
             />
             <ContactRow
               icon="language"
@@ -277,7 +357,17 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
               onPress={place.website ? () => void Linking.openURL(place.website ?? '') : undefined}
             />
             <View style={{ height: 180, borderRadius: 16, overflow: 'hidden', marginTop: 12 }}>
-              <PlacesMap points={[{ id: String(placeId), latitude: place.latitude, longitude: place.longitude, label: '1', title: summary.name }]} />
+              <PlacesMap
+                points={[
+                  {
+                    id: String(placeId),
+                    latitude: place.latitude,
+                    longitude: place.longitude,
+                    label: '1',
+                    title: summary.name,
+                  },
+                ]}
+              />
             </View>
           </View>
         ) : null}
@@ -294,12 +384,20 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
                   <View className="flex-row items-center gap-2.5">
                     <Avatar name={review.userName} url={review.userAvatarUrl} size={36} />
                     <View className="min-w-0 flex-1">
-                      <Text className="text-[13px] font-bold text-[#13364A]">{review.userName ?? 'Khách Smart Travel'}</Text>
-                      <Text className="text-[11px] text-[#8793AB]">{formatDate(review.createdAt)}</Text>
+                      <Text className="text-[13px] font-bold text-[#13364A]">
+                        {review.userName ?? 'Khách Smart Travel'}
+                      </Text>
+                      <Text className="text-[11px] text-[#8793AB]">
+                        {formatDate(review.createdAt)}
+                      </Text>
                     </View>
                     <Stars value={review.rating} size={14} />
                   </View>
-                  {review.comment ? <Text className="mt-2 text-[13px] leading-5 text-[#3B4B57]">{review.comment}</Text> : null}
+                  {review.comment ? (
+                    <Text className="mt-2 text-[13px] leading-5 text-[#3B4B57]">
+                      {review.comment}
+                    </Text>
+                  ) : null}
                 </View>
               ))}
             </View>
@@ -307,7 +405,12 @@ export default function SuggestionDetailScreen({ navigation, route }: RootScreen
         ) : null}
       </View>
 
-      <ImageViewer images={photos} index={viewerIndex} onChange={setViewerIndex} onClose={() => setViewerIndex(null)} />
+      <ImageViewer
+        images={photos}
+        index={viewerIndex}
+        onChange={setViewerIndex}
+        onClose={() => setViewerIndex(null)}
+      />
     </Screen>
   );
 }

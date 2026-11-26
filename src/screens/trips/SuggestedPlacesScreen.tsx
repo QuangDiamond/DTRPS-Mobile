@@ -18,7 +18,8 @@ import { Chip, Cover, FlowProgress, remoteImageSource } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { Header, Screen } from '../../ui/Screen';
-import { EmptyState, ErrorState, Loading, Notice } from '../../ui/States';
+import { EmptyState, ErrorState, Notice } from '../../ui/States';
+import { PlaceCardSkeleton } from '../../ui/Motion';
 import { countDays, formatMoney } from '../../utils/format';
 
 /** Màu huy hiệu độ phù hợp: ≥75 rất phù hợp, ≥55 phù hợp, còn lại có thể bạn thích */
@@ -394,7 +395,11 @@ export default function SuggestedPlacesScreen({
   if (loading) {
     return (
       <Screen header={header}>
-        <Loading label="Đang tải kế hoạch và các địa điểm…" />
+        <View className="gap-3.5">
+          <PlaceCardSkeleton />
+          <PlaceCardSkeleton />
+          <PlaceCardSkeleton />
+        </View>
       </Screen>
     );
   }

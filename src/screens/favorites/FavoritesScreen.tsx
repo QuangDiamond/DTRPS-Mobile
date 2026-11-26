@@ -15,6 +15,7 @@ import { Chip, Cover } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
 import { EmptyState, ErrorState, Loading } from '../../ui/States';
+import { FadeInView, PlaceCardSkeleton } from '../../ui/Motion';
 
 const PAGE_SIZE = 12;
 type SortMode = 'recent' | 'name';
@@ -31,7 +32,15 @@ const SORT_OPTIONS: { id: SortMode; label: string }[] = [
   { id: 'name', label: 'Tên A - Z' },
 ];
 
-function FavoriteCard({ place, onOpen, onRemove }: { place: PlaceSummary; onOpen: () => void; onRemove: () => void }) {
+function FavoriteCard({
+  place,
+  onOpen,
+  onRemove,
+}: {
+  place: PlaceSummary;
+  onOpen: () => void;
+  onRemove: () => void;
+}) {
   return (
     <View style={shadow.card} className="overflow-hidden rounded-[22px] bg-white">
       <Pressable onPress={onOpen}>
@@ -56,20 +65,28 @@ function FavoriteCard({ place, onOpen, onRemove }: { place: PlaceSummary; onOpen
             </Text>
             <View className="mt-1 flex-row items-center gap-1">
               <Icon name="star" size={15} color="#E0A100" />
-              <Text className="text-[11.5px] font-bold text-[#13364A]">{place.rating ?? 'Mới'}</Text>
+              <Text className="text-[11.5px] font-bold text-[#13364A]">
+                {place.rating ?? 'Mới'}
+              </Text>
               <Text className="text-[11.5px] text-[#72818C]">({place.reviewCount} đánh giá)</Text>
             </View>
           </View>
           {place.category ? (
             <View className="items-end">
               <Text className="text-[10px] text-[#72818C]">Loại hình</Text>
-              <Text numberOfLines={1} className="max-w-[120px] text-[13px] font-extrabold text-[#C2410C]">
+              <Text
+                numberOfLines={1}
+                className="max-w-[120px] text-[13px] font-extrabold text-[#C2410C]"
+              >
                 {place.category.name}
               </Text>
             </View>
           ) : null}
         </View>
-        <Pressable onPress={onOpen} className="mt-3 h-11 items-center justify-center rounded-2xl bg-[#ECFEFF]">
+        <Pressable
+          onPress={onOpen}
+          className="mt-3 h-11 items-center justify-center rounded-2xl bg-[#ECFEFF]"
+        >
           <Text className="text-[13px] font-bold text-[#0E7490]">Xem chi tiết</Text>
         </Pressable>
       </View>
@@ -116,7 +133,12 @@ export default function FavoritesScreen() {
   );
 
   if (!user) {
-    return <LoginRequired title="Địa điểm yêu thích" message="Đăng nhập để lưu và xem lại các địa điểm bạn thích." />;
+    return (
+      <LoginRequired
+        title="Địa điểm yêu thích"
+        message="Đăng nhập để lưu và xem lại các địa điểm bạn thích."
+      />
+    );
   }
 
   const loadMore = () => {
@@ -161,11 +183,22 @@ export default function FavoritesScreen() {
           <View>
             <View className="flex-row items-baseline gap-2">
               <Text className="text-[22px] font-extrabold text-[#13364A]">Địa điểm yêu thích</Text>
-              <Text className="text-[12px] font-semibold text-[#0891B2]">({total} điểm đã lưu)</Text>
+              <Text className="text-[12px] font-semibold text-[#0891B2]">
+                ({total} điểm đã lưu)
+              </Text>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 12 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingVertical: 12 }}
+            >
               {GROUP_FILTERS.map((item) => (
-                <Chip key={item.id} label={item.label} selected={group === item.id} onPress={() => setGroup(item.id)} />
+                <Chip
+                  key={item.id}
+                  label={item.label}
+                  selected={group === item.id}
+                  onPress={() => setGroup(item.id)}
+                />
               ))}
             </ScrollView>
             <View className="mb-1 flex-row gap-2">
@@ -175,7 +208,9 @@ export default function FavoritesScreen() {
                   onPress={() => setSort(item.id)}
                   className={`rounded-full px-3 py-1.5 ${sort === item.id ? 'bg-[#0F2A3B]' : 'bg-[#EEF3F5]'}`}
                 >
-                  <Text className={`text-[11.5px] font-bold ${sort === item.id ? 'text-white' : 'text-[#557080]'}`}>
+                  <Text
+                    className={`text-[11.5px] font-bold ${sort === item.id ? 'text-white' : 'text-[#557080]'}`}
+                  >
                     {item.label}
                   </Text>
                 </Pressable>
@@ -183,27 +218,41 @@ export default function FavoritesScreen() {
             </View>
           </View>
         }
-        renderItem={({ item }) => (
-          <FavoriteCard
-            place={item}
-            onOpen={() => navigation.navigate('PlaceDetail', { placeId: item.id })}
-            onRemove={() => remove(item)}
-          />
+        renderItem={({ item, index }) => (
+          <FadeInView delay={Math.min(index, 5) * 45} offset={10} duration={240}>
+            <FavoriteCard
+              place={item}
+              onOpen={() => navigation.navigate('PlaceDetail', { placeId: item.id })}
+              onRemove={() => remove(item)}
+            />
+          </FadeInView>
         )}
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
           loading ? (
-            <Loading />
+            <View className="gap-3.5">
+              <PlaceCardSkeleton compact />
+              <PlaceCardSkeleton compact />
+              <PlaceCardSkeleton compact />
+            </View>
           ) : loadError ? (
             <ErrorState message={loadError} onRetry={() => setRetry((n) => n + 1)} />
           ) : (
             <EmptyState
               icon="favorite-border"
-              title={group !== 'all' ? 'Không có địa điểm nào trong nhóm này' : 'Chưa có địa điểm yêu thích'}
+              title={
+                group !== 'all'
+                  ? 'Không có địa điểm nào trong nhóm này'
+                  : 'Chưa có địa điểm yêu thích'
+              }
               message="Bấm vào trái tim trên địa điểm bạn thích để lưu lại xem sau."
               action={
-                <Button title="Khám phá địa điểm" icon="explore" onPress={() => navigation.navigate('Tabs', { screen: 'Explore' })} />
+                <Button
+                  title="Khám phá địa điểm"
+                  icon="explore"
+                  onPress={() => navigation.navigate('Tabs', { screen: 'Explore' })}
+                />
               }
             />
           )

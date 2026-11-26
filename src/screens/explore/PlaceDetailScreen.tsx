@@ -6,6 +6,7 @@ import { placeReviewApi, type PlaceReview } from '../../api/placeReviewApi';
 import { placesApi } from '../../api/placesApi';
 import type { PlaceDetail } from '../../api/types';
 import { useAuth } from '../../auth/AuthProvider';
+import { useNotifications } from '../../auth/NotificationsProvider';
 import ImageViewer from '../../components/ImageViewer';
 import { FavoriteButton } from '../../components/PlaceCard';
 import PlaceDirectionsMap from '../../components/PlaceDirectionsMap';
@@ -17,6 +18,7 @@ import { colors } from '../../theme';
 import { Avatar, Badge, remoteImageSource, Stars } from '../../ui/Bits';
 import { Button, IconButton } from '../../ui/Button';
 import { Icon, type IconName } from '../../ui/Icon';
+import { FadeInView, PlaceDetailSkeleton } from '../../ui/Motion';
 import { Header, Screen } from '../../ui/Screen';
 import { EmptyState, ErrorState, Loading } from '../../ui/States';
 import { formatDate } from '../../utils/format';
@@ -161,6 +163,7 @@ function ReviewCard({
 export default function PlaceDetailScreen({ navigation, route }: RootScreenProps<'PlaceDetail'>) {
   const { placeId } = route.params;
   const { user } = useAuth();
+  const { version: liveVersion, lastEventType } = useNotifications();
   const width = Dimensions.get('window').width;
   const [detail, setDetail] = useState<PlaceDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -211,6 +214,14 @@ export default function PlaceDetailScreen({ navigation, route }: RootScreenProps
       active = false;
     };
   }, [placeId, user]);
+
+  // Tự tải lại danh sách đánh giá realtime khi Admin ẩn/hiện hoặc xử lý báo cáo đánh giá (giống Web)
+  useEffect(() => {
+    if (liveVersion > 0 && lastEventType?.includes('REVIEW')) {
+      setReviewsPage(0);
+      setReviewsVersion((v) => v + 1);
+    }
+  }, [liveVersion, lastEventType]);
 
   useEffect(() => {
     let active = true;
@@ -274,7 +285,7 @@ export default function PlaceDetailScreen({ navigation, route }: RootScreenProps
   if (!detail) {
     return (
       <Screen header={header}>
-        <Loading label="Đang tải địa điểm…" />
+        <PlaceDetailSkeleton />
       </Screen>
     );
   }
@@ -293,276 +304,281 @@ export default function PlaceDetailScreen({ navigation, route }: RootScreenProps
 
   return (
     <Screen header={header}>
-      {/* Ảnh địa điểm, vuốt ngang để chuyển ảnh, bấm để phóng to */}
-      <View
-        style={{ height: 250, borderRadius: 24, overflow: 'hidden', backgroundColor: '#CEE7EA' }}
-      >
-        {images.length > 0 ? (
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(event) =>
-              setActiveImage(Math.round(event.nativeEvent.contentOffset.x / imageWidth))
-            }
-          >
-            {images.map((url, idx) => (
-              <Pressable key={url} onPress={() => setViewer({ images, index: idx })}>
-                <Image source={remoteImageSource(url)} style={{ width: imageWidth, height: 250 }} />
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : (
-          <View className="flex-1 items-center justify-center">
-            <Icon name="image" size={48} color="#FFFFFF" />
-          </View>
-        )}
+      <FadeInView offset={10} duration={260}>
+        {/* Ảnh địa điểm, vuốt ngang để chuyển ảnh, bấm để phóng to */}
         <View
-          className="absolute left-3 top-3 flex-row items-center gap-1.5 rounded-full px-3 py-1"
-          style={{ backgroundColor: openNow ? '#ECFDF5' : '#FEF2F2' }}
+          style={{ height: 250, borderRadius: 24, overflow: 'hidden', backgroundColor: '#CEE7EA' }}
         >
+          {images.length > 0 ? (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event) =>
+                setActiveImage(Math.round(event.nativeEvent.contentOffset.x / imageWidth))
+              }
+            >
+              {images.map((url, idx) => (
+                <Pressable key={url} onPress={() => setViewer({ images, index: idx })}>
+                  <Image
+                    source={remoteImageSource(url)}
+                    style={{ width: imageWidth, height: 250 }}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : (
+            <View className="flex-1 items-center justify-center">
+              <Icon name="image" size={48} color="#FFFFFF" />
+            </View>
+          )}
           <View
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: openNow ? '#10B981' : '#EF4444',
-            }}
-          />
-          <Text
-            style={{ color: openNow ? '#0F766E' : '#B91C1C' }}
-            className="text-[11px] font-bold"
+            className="absolute left-3 top-3 flex-row items-center gap-1.5 rounded-full px-3 py-1"
+            style={{ backgroundColor: openNow ? '#ECFDF5' : '#FEF2F2' }}
           >
-            {openNow ? 'Đang mở' : 'Đóng cửa'}
-          </Text>
-        </View>
-        <View className="absolute right-3 top-3">
-          <FavoriteButton placeId={place.id} size={40} />
-        </View>
-        {images.length > 1 ? (
-          <View className="absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1">
-            <Text className="text-[11.5px] font-bold text-white">
-              {activeImage + 1} / {images.length}
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: openNow ? '#10B981' : '#EF4444',
+              }}
+            />
+            <Text
+              style={{ color: openNow ? '#0F766E' : '#B91C1C' }}
+              className="text-[11px] font-bold"
+            >
+              {openNow ? 'Đang mở' : 'Đóng cửa'}
             </Text>
           </View>
-        ) : null}
-      </View>
-
-      <Text className="mt-4 text-[24px] font-extrabold leading-[30px] text-[#13364A]">
-        {place.name}
-      </Text>
-      <View className="mt-2 flex-row flex-wrap items-center gap-2">
-        <View className="flex-row items-center gap-1">
-          <Icon name="star" size={17} color="#E0A100" />
-          <Text className="text-[13.5px] font-bold text-[#13364A]">{place.rating ?? 'Mới'}</Text>
-          {place.rating !== null ? (
-            <Text className="text-[12px] text-[#72818C]">({place.reviewCount} đánh giá)</Text>
-          ) : null}
-        </View>
-        {place.province ? <Badge label={place.province.name} icon="location-city" /> : null}
-      </View>
-      <View className="mt-2 flex-row flex-wrap gap-1.5">
-        {(place.categories && place.categories.length > 0
-          ? place.categories
-          : place.category
-            ? [place.category]
-            : []
-        ).map((type) => (
-          <Badge key={type.code} label={type.name} bg="#F1F5F9" fg="#405A6E" />
-        ))}
-      </View>
-      <Pressable
-        onPress={() => setOpenMapSignal((count) => count + 1)}
-        className="mt-3 flex-row items-start gap-1.5"
-      >
-        <Icon name="location-on" size={17} color={colors.primary} style={{ marginTop: 1 }} />
-        <Text className="flex-1 text-[13px] leading-5 text-[#405A6E]">
-          {place.address ?? 'Chưa cập nhật địa chỉ'}
-        </Text>
-      </Pressable>
-
-      {/* Giới thiệu */}
-      <View className="mt-4 rounded-2xl bg-white p-4">
-        <Text className="mb-1.5 text-[15px] font-extrabold text-[#13364A]">Giới thiệu</Text>
-        <Text
-          numberOfLines={introExpanded ? undefined : 4}
-          className="text-[13.5px] leading-[22px] text-[#3B4B57]"
-        >
-          {detail.description ?? 'Chưa có mô tả cho địa điểm này.'}
-        </Text>
-        {detail.description && detail.description.length > 180 ? (
-          <Pressable
-            onPress={() => setIntroExpanded((v) => !v)}
-            className="mt-1 flex-row items-center"
-          >
-            <Text className="text-[12.5px] font-bold text-[#0891B2]">
-              {introExpanded ? 'Thu gọn' : 'Xem thêm'}
-            </Text>
-            <Icon
-              name={introExpanded ? 'expand-less' : 'expand-more'}
-              size={18}
-              color={colors.primary}
-            />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {/* Thông tin nhanh */}
-      <View className="mt-4 flex-row flex-wrap justify-between gap-y-3">
-        <InfoTile icon="schedule" label="Giờ mở cửa hôm nay" value={todayHoursLabel(detail)} />
-        <InfoTile icon="sell" label="Giá tham khảo" value={cheapestPriceLabel(detail)} />
-        <InfoTile
-          icon="call"
-          label="Điện thoại"
-          value={detail.phone ?? 'Chưa cập nhật'}
-          onPress={
-            detail.phone
-              ? () => void Linking.openURL(`tel:${detail.phone?.replace(/\s+/g, '')}`)
-              : undefined
-          }
-        />
-        <InfoTile
-          icon="language"
-          label="Website"
-          value={websiteLabel(detail.website)}
-          onPress={detail.website ? () => void Linking.openURL(detail.website ?? '') : undefined}
-        />
-      </View>
-
-      <Text className="mb-2.5 mt-6 text-[16px] font-extrabold text-[#13364A]">
-        Thời tiết hôm nay
-      </Text>
-      <TodayWeatherCard placeId={place.id} />
-
-      <Text className="mb-2.5 mt-6 text-[16px] font-extrabold text-[#13364A]">
-        Bảng giá tham khảo
-      </Text>
-      <View className="rounded-2xl bg-white p-4">
-        {detail.prices.length === 0 ? (
-          <Text className="text-[12.5px] text-[#72818C]">Chưa có thông tin giá.</Text>
-        ) : (
-          detail.prices.map((price, idx) => (
-            <View
-              key={`${price.priceType}-${idx}`}
-              className={`flex-row items-center justify-between py-2.5 ${idx > 0 ? 'border-t border-[#EEF1F4]' : ''}`}
-            >
-              <Text className="flex-1 text-[13px] text-[#3B4B57]">
-                {price.description ?? PRICE_LABELS[price.priceType] ?? 'Giá'}
-              </Text>
-              <Text className="text-[13.5px] font-extrabold text-[#0E7490]">
-                {formatVnd(price.amount)}
+          <View className="absolute right-3 top-3">
+            <FavoriteButton placeId={place.id} size={40} />
+          </View>
+          {images.length > 1 ? (
+            <View className="absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1">
+              <Text className="text-[11.5px] font-bold text-white">
+                {activeImage + 1} / {images.length}
               </Text>
             </View>
-          ))
-        )}
-      </View>
-
-      <Text className="mb-2.5 mt-6 text-[16px] font-extrabold text-[#13364A]">Giờ mở cửa</Text>
-      <View className="rounded-2xl bg-white p-4">
-        {detail.openingHours.length === 0 ? (
-          <Text className="text-[12.5px] text-[#72818C]">Chưa cập nhật giờ mở cửa.</Text>
-        ) : (
-          detail.openingHours.map((hour) => {
-            const today = hour.dayOfWeek === todayOfWeek();
-            return (
-              <View key={hour.dayOfWeek} className="flex-row justify-between py-1.5">
-                <Text
-                  className={`text-[13px] ${today ? 'font-extrabold text-[#0E7490]' : 'text-[#3B4B57]'}`}
-                >
-                  {DAY_LABELS[hour.dayOfWeek - 1]}
-                  {today ? ' (hôm nay)' : ''}
-                </Text>
-                <Text
-                  className={`text-[13px] font-semibold ${hour.closed ? 'text-[#C2412D]' : 'text-[#13364A]'}`}
-                >
-                  {hour.closed
-                    ? 'Đóng cửa'
-                    : `${hour.openTime ?? '--'} - ${hour.closeTime ?? '--'}`}
-                </Text>
-              </View>
-            );
-          })
-        )}
-      </View>
-
-      <PlaceDirectionsMap
-        placeId={place.id}
-        placeName={place.name}
-        address={place.address}
-        latitude={detail.latitude}
-        longitude={detail.longitude}
-        isAuthenticated={Boolean(user)}
-        onRequireLogin={() => navigation.navigate('Login')}
-        openMapSignal={openMapSignal}
-      />
-
-      {/* Đánh giá */}
-      <View className="mb-3 mt-7 flex-row items-center justify-between">
-        <Text className="text-[17px] font-extrabold text-[#13364A]">Đánh giá địa điểm</Text>
-        <View className="flex-row items-center gap-1">
-          <Icon name="star" size={17} color="#E0A100" />
-          <Text className="text-[14px] font-bold text-[#13364A]">{place.rating ?? 'Mới'}</Text>
-          {place.rating !== null ? (
-            <Text className="text-[12px] text-[#72818C]">({place.reviewCount})</Text>
           ) : null}
         </View>
-      </View>
 
-      {user ? (
-        <ReviewForm
-          placeId={place.id}
-          stopTitle={place.name}
-          onSubmitted={() => {
-            setReviewsPage(0);
-            setReviewsVersion((v) => v + 1);
-            placesApi
-              .get(placeId)
-              .then(setDetail)
-              .catch(() => undefined);
-          }}
-        />
-      ) : (
-        <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-white p-4">
-          <Text className="flex-1 text-[13px] text-[#72818C]">
-            Đăng nhập để viết đánh giá cho địa điểm này.
+        <Text className="mt-4 text-[24px] font-extrabold leading-[30px] text-[#13364A]">
+          {place.name}
+        </Text>
+        <View className="mt-2 flex-row flex-wrap items-center gap-2">
+          <View className="flex-row items-center gap-1">
+            <Icon name="star" size={17} color="#E0A100" />
+            <Text className="text-[13.5px] font-bold text-[#13364A]">{place.rating ?? 'Mới'}</Text>
+            {place.rating !== null ? (
+              <Text className="text-[12px] text-[#72818C]">({place.reviewCount} đánh giá)</Text>
+            ) : null}
+          </View>
+          {place.province ? <Badge label={place.province.name} icon="location-city" /> : null}
+        </View>
+        <View className="mt-2 flex-row flex-wrap gap-1.5">
+          {(place.categories && place.categories.length > 0
+            ? place.categories
+            : place.category
+              ? [place.category]
+              : []
+          ).map((type) => (
+            <Badge key={type.code} label={type.name} bg="#F1F5F9" fg="#405A6E" />
+          ))}
+        </View>
+        <Pressable
+          onPress={() => setOpenMapSignal((count) => count + 1)}
+          className="mt-3 flex-row items-start gap-1.5"
+        >
+          <Icon name="location-on" size={17} color={colors.primary} style={{ marginTop: 1 }} />
+          <Text className="flex-1 text-[13px] leading-5 text-[#405A6E]">
+            {place.address ?? 'Chưa cập nhật địa chỉ'}
           </Text>
-          <Button
-            title="Đăng nhập"
-            size="sm"
-            full={false}
-            onPress={() => navigation.navigate('Login')}
+        </Pressable>
+
+        {/* Giới thiệu */}
+        <View className="mt-4 rounded-2xl bg-white p-4">
+          <Text className="mb-1.5 text-[15px] font-extrabold text-[#13364A]">Giới thiệu</Text>
+          <Text
+            numberOfLines={introExpanded ? undefined : 4}
+            className="text-[13.5px] leading-[22px] text-[#3B4B57]"
+          >
+            {detail.description ?? 'Chưa có mô tả cho địa điểm này.'}
+          </Text>
+          {detail.description && detail.description.length > 180 ? (
+            <Pressable
+              onPress={() => setIntroExpanded((v) => !v)}
+              className="mt-1 flex-row items-center"
+            >
+              <Text className="text-[12.5px] font-bold text-[#0891B2]">
+                {introExpanded ? 'Thu gọn' : 'Xem thêm'}
+              </Text>
+              <Icon
+                name={introExpanded ? 'expand-less' : 'expand-more'}
+                size={18}
+                color={colors.primary}
+              />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Thông tin nhanh */}
+        <View className="mt-4 flex-row flex-wrap justify-between gap-y-3">
+          <InfoTile icon="schedule" label="Giờ mở cửa hôm nay" value={todayHoursLabel(detail)} />
+          <InfoTile icon="sell" label="Giá tham khảo" value={cheapestPriceLabel(detail)} />
+          <InfoTile
+            icon="call"
+            label="Điện thoại"
+            value={detail.phone ?? 'Chưa cập nhật'}
+            onPress={
+              detail.phone
+                ? () => void Linking.openURL(`tel:${detail.phone?.replace(/\s+/g, '')}`)
+                : undefined
+            }
+          />
+          <InfoTile
+            icon="language"
+            label="Website"
+            value={websiteLabel(detail.website)}
+            onPress={detail.website ? () => void Linking.openURL(detail.website ?? '') : undefined}
           />
         </View>
-      )}
 
-      <View className="mt-3 gap-3">
-        {reviewsError ? (
-          <ErrorState message={reviewsError} onRetry={() => setReviewsVersion((v) => v + 1)} />
-        ) : null}
-        {!reviewsLoading && !reviewsError && reviews.length === 0 ? (
-          <Text className="py-4 text-center text-[13px] text-[#72818C]">
-            Chưa có đánh giá nào. Hãy là người đầu tiên!
-          </Text>
-        ) : null}
-        {reviews.map((review) => (
-          <ReviewCard
-            key={review.reviewId}
-            review={review}
-            own={user?.id === review.userId}
-            reported={reportedIds.has(review.reviewId)}
-            onReport={() => (user ? setReporting(review) : navigation.navigate('Login'))}
-            onOpenImage={(urls, index) => setViewer({ images: urls, index })}
+        <Text className="mb-2.5 mt-6 text-[16px] font-extrabold text-[#13364A]">
+          Thời tiết hôm nay
+        </Text>
+        <TodayWeatherCard placeId={place.id} />
+
+        <Text className="mb-2.5 mt-6 text-[16px] font-extrabold text-[#13364A]">
+          Bảng giá tham khảo
+        </Text>
+        <View className="rounded-2xl bg-white p-4">
+          {detail.prices.length === 0 ? (
+            <Text className="text-[12.5px] text-[#72818C]">Chưa có thông tin giá.</Text>
+          ) : (
+            detail.prices.map((price, idx) => (
+              <View
+                key={`${price.priceType}-${idx}`}
+                className={`flex-row items-center justify-between py-2.5 ${idx > 0 ? 'border-t border-[#EEF1F4]' : ''}`}
+              >
+                <Text className="flex-1 text-[13px] text-[#3B4B57]">
+                  {price.description ?? PRICE_LABELS[price.priceType] ?? 'Giá'}
+                </Text>
+                <Text className="text-[13.5px] font-extrabold text-[#0E7490]">
+                  {formatVnd(price.amount)}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        <Text className="mb-2.5 mt-6 text-[16px] font-extrabold text-[#13364A]">Giờ mở cửa</Text>
+        <View className="rounded-2xl bg-white p-4">
+          {detail.openingHours.length === 0 ? (
+            <Text className="text-[12.5px] text-[#72818C]">Chưa cập nhật giờ mở cửa.</Text>
+          ) : (
+            detail.openingHours.map((hour) => {
+              const today = hour.dayOfWeek === todayOfWeek();
+              return (
+                <View key={hour.dayOfWeek} className="flex-row justify-between py-1.5">
+                  <Text
+                    className={`text-[13px] ${today ? 'font-extrabold text-[#0E7490]' : 'text-[#3B4B57]'}`}
+                  >
+                    {DAY_LABELS[hour.dayOfWeek - 1]}
+                    {today ? ' (hôm nay)' : ''}
+                  </Text>
+                  <Text
+                    className={`text-[13px] font-semibold ${hour.closed ? 'text-[#C2412D]' : 'text-[#13364A]'}`}
+                  >
+                    {hour.closed
+                      ? 'Đóng cửa'
+                      : `${hour.openTime ?? '--'} - ${hour.closeTime ?? '--'}`}
+                  </Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        <PlaceDirectionsMap
+          placeId={place.id}
+          placeName={place.name}
+          address={place.address}
+          latitude={detail.latitude}
+          longitude={detail.longitude}
+          isAuthenticated={Boolean(user)}
+          onRequireLogin={() => navigation.navigate('Login')}
+          openMapSignal={openMapSignal}
+        />
+
+        {/* Đánh giá */}
+        <View className="mb-3 mt-7 flex-row items-center justify-between">
+          <Text className="text-[17px] font-extrabold text-[#13364A]">Đánh giá địa điểm</Text>
+          <View className="flex-row items-center gap-1">
+            <Icon name="star" size={17} color="#E0A100" />
+            <Text className="text-[14px] font-bold text-[#13364A]">{place.rating ?? 'Mới'}</Text>
+            {place.rating !== null ? (
+              <Text className="text-[12px] text-[#72818C]">({place.reviewCount})</Text>
+            ) : null}
+          </View>
+        </View>
+
+        {user ? (
+          <ReviewForm
+            placeId={place.id}
+            stopTitle={place.name}
+            onSubmitted={() => {
+              setReviewsPage(0);
+              setReviewsVersion((v) => v + 1);
+              placesApi
+                .get(placeId)
+                .then(setDetail)
+                .catch(() => undefined);
+            }}
           />
-        ))}
-        {reviewsLoading ? <Loading label="Đang tải đánh giá…" /> : null}
-        {!reviewsLoading && reviews.length < reviewsTotal ? (
-          <Button
-            title={`Xem thêm đánh giá (${reviewsTotal - reviews.length})`}
-            variant="secondary"
-            onPress={() => setReviewsPage((p) => p + 1)}
-          />
-        ) : null}
-      </View>
+        ) : (
+          <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-white p-4">
+            <Text className="flex-1 text-[13px] text-[#72818C]">
+              Đăng nhập để viết đánh giá cho địa điểm này.
+            </Text>
+            <Button
+              title="Đăng nhập"
+              size="sm"
+              full={false}
+              onPress={() => navigation.navigate('Login')}
+            />
+          </View>
+        )}
+
+        <View className="mt-3 gap-3">
+          {reviewsError ? (
+            <ErrorState message={reviewsError} onRetry={() => setReviewsVersion((v) => v + 1)} />
+          ) : null}
+          {!reviewsLoading && !reviewsError && reviews.length === 0 ? (
+            <Text className="py-4 text-center text-[13px] text-[#72818C]">
+              Chưa có đánh giá nào. Hãy là người đầu tiên!
+            </Text>
+          ) : null}
+          {reviews.map((review) => (
+            <ReviewCard
+              key={review.reviewId}
+              review={review}
+              own={user?.id === review.userId}
+              reported={reportedIds.has(review.reviewId)}
+              onReport={() => (user ? setReporting(review) : navigation.navigate('Login'))}
+              onOpenImage={(urls, index) => setViewer({ images: urls, index })}
+            />
+          ))}
+          {reviewsLoading ? <Loading label="Đang tải đánh giá…" /> : null}
+          {!reviewsLoading && reviews.length < reviewsTotal ? (
+            <Button
+              title={`Xem thêm đánh giá (${reviewsTotal - reviews.length})`}
+              variant="secondary"
+              onPress={() => setReviewsPage((p) => p + 1)}
+            />
+          ) : null}
+        </View>
+      </FadeInView>
 
       <ImageViewer
         images={viewer?.images ?? []}

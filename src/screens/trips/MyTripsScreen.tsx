@@ -12,7 +12,8 @@ import { colors, shadow } from '../../theme';
 import { Sheet } from '../../ui/Bits';
 import { Button } from '../../ui/Button';
 import { Icon } from '../../ui/Icon';
-import { EmptyState, ErrorState, Loading } from '../../ui/States';
+import { EmptyState, ErrorState } from '../../ui/States';
+import { FadeInView, ListCardSkeleton, ScalePressable } from '../../ui/Motion';
 import { Toast, useToast } from '../../ui/Toast';
 import { countDays, formatDate, formatNumber } from '../../utils/format';
 import {
@@ -53,7 +54,8 @@ function TripCard({
   onSuggestions: () => void;
 }) {
   const status = planStatusInfo(plan.status);
-  const hasMenu = canEditPlan(plan) || canDeletePlan(plan) || (plan.allowedNextStatuses ?? []).length > 0;
+  const hasMenu =
+    canEditPlan(plan) || canDeletePlan(plan) || (plan.allowedNextStatuses ?? []).length > 0;
   return (
     <View style={shadow.card} className="rounded-[22px] bg-white p-2.5">
       <View className="h-[150px] justify-between overflow-hidden rounded-[18px] bg-[#0891B2] p-3">
@@ -61,19 +63,35 @@ function TripCard({
           <Icon name="travel-explore" size={170} color="#FFFFFF" />
         </View>
         <View className="flex-row items-start justify-between">
-          <View style={{ backgroundColor: status.bg }} className="flex-row items-center gap-1 rounded-full px-2.5 py-1">
+          <View
+            style={{ backgroundColor: status.bg }}
+            className="flex-row items-center gap-1 rounded-full px-2.5 py-1"
+          >
             <Icon name={status.icon} size={14} color={status.fg} />
             <Text style={{ color: status.fg }} className="text-[10.5px] font-bold">
               {status.label}
             </Text>
           </View>
           <View className="flex-row gap-1.5">
-            <Pressable onPress={onShare} accessibilityLabel={`Chia sẻ ${plan.title}`} className="h-8 w-8 items-center justify-center rounded-full bg-white/20">
+            <Pressable
+              onPress={onShare}
+              accessibilityLabel={`Chia sẻ ${plan.title}`}
+              className="h-8 w-8 items-center justify-center rounded-full bg-white/20"
+            >
               <Icon name="share" size={17} color="#FFFFFF" />
             </Pressable>
             {hasMenu ? (
-              <Pressable onPress={onMenu} disabled={busy} accessibilityLabel={`Thao tác với ${plan.title}`} className="h-8 w-8 items-center justify-center rounded-full bg-white/20">
-                {busy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name="more-vert" size={18} color="#FFFFFF" />}
+              <Pressable
+                onPress={onMenu}
+                disabled={busy}
+                accessibilityLabel={`Thao tác với ${plan.title}`}
+                className="h-8 w-8 items-center justify-center rounded-full bg-white/20"
+              >
+                {busy ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Icon name="more-vert" size={18} color="#FFFFFF" />
+                )}
               </Pressable>
             ) : null}
           </View>
@@ -97,7 +115,9 @@ function TripCard({
             <Icon name="date-range" size={18} color={colors.primary} />
             <View>
               <Text className="text-[10px] text-[#72818C]">Thời gian</Text>
-              <Text className="text-[11.5px] font-bold text-[#13364A]">{formatDate(plan.startDate)}</Text>
+              <Text className="text-[11.5px] font-bold text-[#13364A]">
+                {formatDate(plan.startDate)}
+              </Text>
               <Text className="text-[10px] text-[#72818C]">đến {formatDate(plan.endDate)}</Text>
             </View>
           </View>
@@ -118,24 +138,45 @@ function TripCard({
           </View>
           <View className="flex-row items-center gap-1">
             <Icon name="category" size={16} color={colors.primary} />
-            <Text className="text-[11.5px] text-[#72818C]">{plan.categoryCodes?.length ?? 0} loại hình</Text>
+            <Text className="text-[11.5px] text-[#72818C]">
+              {plan.categoryCodes?.length ?? 0} loại hình
+            </Text>
           </View>
         </View>
         <View className="mb-1 mt-3.5 flex-row items-center gap-2">
-          <Pressable
-            onPress={onOpen}
-            disabled={opening}
-            className="h-11 flex-1 flex-row items-center justify-center gap-1.5 rounded-full bg-[#0E7490] px-3"
+          <View className="flex-1">
+            <ScalePressable
+              scaleTo={0.96}
+              onPress={onOpen}
+              disabled={opening}
+              className="h-11 flex-row items-center justify-center gap-1.5 rounded-full bg-[#0E7490] px-3"
+            >
+              {opening ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Icon name="route" size={18} color="#FFFFFF" />
+              )}
+              <Text className="text-[12.5px] font-bold text-white">
+                {opening ? 'Đang kiểm tra...' : 'Mở chuyến đi'}
+              </Text>
+            </ScalePressable>
+          </View>
+          <ScalePressable
+            scaleTo={0.9}
+            onPress={onSelected}
+            accessibilityLabel={`Địa điểm đã chọn của ${plan.title}`}
+            className="h-11 w-11 items-center justify-center rounded-full bg-[#ECFEFF]"
           >
-            {opening ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Icon name="route" size={18} color="#FFFFFF" />}
-            <Text className="text-[12.5px] font-bold text-white">{opening ? 'Đang kiểm tra...' : 'Mở chuyến đi'}</Text>
-          </Pressable>
-          <Pressable onPress={onSelected} accessibilityLabel={`Địa điểm đã chọn của ${plan.title}`} className="h-11 w-11 items-center justify-center rounded-full bg-[#ECFEFF]">
             <Icon name="shopping-basket" size={20} color={colors.primaryStrong} />
-          </Pressable>
-          <Pressable onPress={onSuggestions} accessibilityLabel={`Danh sách địa điểm cho ${plan.title}`} className="h-11 w-11 items-center justify-center rounded-full bg-[#ECFEFF]">
+          </ScalePressable>
+          <ScalePressable
+            scaleTo={0.9}
+            onPress={onSuggestions}
+            accessibilityLabel={`Danh sách địa điểm cho ${plan.title}`}
+            className="h-11 w-11 items-center justify-center rounded-full bg-[#ECFEFF]"
+          >
             <Icon name="add-location-alt" size={20} color={colors.primaryStrong} />
-          </Pressable>
+          </ScalePressable>
         </View>
       </View>
     </View>
@@ -178,14 +219,21 @@ export default function MyTripsScreen() {
   );
 
   if (!user) {
-    return <LoginRequired title="Chuyến đi của bạn" message="Đăng nhập để tạo kế hoạch, nhận gợi ý AI và theo dõi lịch trình." />;
+    return (
+      <LoginRequired
+        title="Chuyến đi của bạn"
+        message="Đăng nhập để tạo kế hoạch, nhận gợi ý AI và theo dõi lịch trình."
+      />
+    );
   }
 
   const counts: Record<TripFilter, number> = {
     ongoing: plans.filter((plan) => !isPlanFinished(plan)).length,
     finished: plans.filter(isPlanFinished).length,
   };
-  const visiblePlans = plans.filter((plan) => (filter === 'finished' ? isPlanFinished(plan) : !isPlanFinished(plan)));
+  const visiblePlans = plans.filter((plan) =>
+    filter === 'finished' ? isPlanFinished(plan) : !isPlanFinished(plan),
+  );
 
   // Backend không đổi status khi tạo itinerary → kiểm tra lịch trình đang dùng (giống web)
   const openPlan = async (plan: TravelPlanResponse) => {
@@ -216,7 +264,9 @@ export default function MyTripsScreen() {
           setBusyPlanId(plan.planId);
           try {
             const updated = await tripFlowApi.changeStatus(plan.planId, status);
-            setPlans((current) => current.map((item) => (item.planId === updated.planId ? updated : item)));
+            setPlans((current) =>
+              current.map((item) => (item.planId === updated.planId ? updated : item)),
+            );
             const label = PLAN_STATUS_INFO[updated.status]?.label ?? updated.status;
             showToast(
               isPlanFinished(updated)
@@ -282,7 +332,9 @@ export default function MyTripsScreen() {
             <View className="flex-row items-center gap-3">
               <View className="min-w-0 flex-1">
                 <Text className="text-[22px] font-extrabold text-[#13364A]">Chuyến đi của tôi</Text>
-                <Text className="text-[12px] text-[#72818C]">Các kế hoạch đã lưu trong tài khoản Smart Travel</Text>
+                <Text className="text-[12px] text-[#72818C]">
+                  Các kế hoạch đã lưu trong tài khoản Smart Travel
+                </Text>
               </View>
               <Pressable
                 onPress={() => navigation.navigate('PlanTrip')}
@@ -299,7 +351,9 @@ export default function MyTripsScreen() {
                   onPress={() => setFilter(item.id)}
                   className={`flex-1 items-center rounded-xl py-2.5 ${filter === item.id ? 'bg-white' : ''}`}
                 >
-                  <Text className={`text-[13px] font-bold ${filter === item.id ? 'text-[#0E7490]' : 'text-[#72818C]'}`}>
+                  <Text
+                    className={`text-[13px] font-bold ${filter === item.id ? 'text-[#0E7490]' : 'text-[#72818C]'}`}
+                  >
                     {item.label} ({counts[item.id]})
                   </Text>
                 </Pressable>
@@ -307,35 +361,55 @@ export default function MyTripsScreen() {
             </View>
           </View>
         }
-        renderItem={({ item }) => (
-          <TripCard
-            plan={item}
-            busy={busyPlanId === item.planId}
-            opening={openingPlanId === item.planId}
-            onOpen={() => void openPlan(item)}
-            onMenu={() => setMenuPlan(item)}
-            onShare={() => sharePlan(item)}
-            onSelected={() => navigation.navigate('SelectedPlaces', { planId: item.planId })}
-            onSuggestions={() => navigation.navigate('Suggestions', { planId: item.planId })}
-          />
+        renderItem={({ item, index }) => (
+          <FadeInView delay={Math.min(index, 5) * 45} offset={10} duration={240}>
+            <TripCard
+              plan={item}
+              busy={busyPlanId === item.planId}
+              opening={openingPlanId === item.planId}
+              onOpen={() => void openPlan(item)}
+              onMenu={() => setMenuPlan(item)}
+              onShare={() => sharePlan(item)}
+              onSelected={() => navigation.navigate('SelectedPlaces', { planId: item.planId })}
+              onSuggestions={() => navigation.navigate('Suggestions', { planId: item.planId })}
+            />
+          </FadeInView>
         )}
         ListEmptyComponent={
           loading ? (
-            <Loading label="Đang tải chuyến đi…" />
+            <ListCardSkeleton count={3} />
           ) : error ? (
             <ErrorState message={error} onRetry={() => setRetryCount((n) => n + 1)} />
           ) : (
             <EmptyState
               icon="luggage"
-              title={filter === 'finished' ? 'Chưa có chuyến đi nào kết thúc' : 'Chưa có kế hoạch nào'}
-              message={filter === 'finished' ? undefined : 'Tạo kế hoạch đầu tiên, SmartTravel sẽ gợi ý địa điểm phù hợp cho bạn.'}
-              action={filter === 'ongoing' ? <Button title="Tạo chuyến đi" icon="add" onPress={() => navigation.navigate('PlanTrip')} /> : undefined}
+              title={
+                filter === 'finished' ? 'Chưa có chuyến đi nào kết thúc' : 'Chưa có kế hoạch nào'
+              }
+              message={
+                filter === 'finished'
+                  ? undefined
+                  : 'Tạo kế hoạch đầu tiên, SmartTravel sẽ gợi ý địa điểm phù hợp cho bạn.'
+              }
+              action={
+                filter === 'ongoing' ? (
+                  <Button
+                    title="Tạo chuyến đi"
+                    icon="add"
+                    onPress={() => navigation.navigate('PlanTrip')}
+                  />
+                ) : undefined
+              }
             />
           )
         }
       />
 
-      <Sheet visible={menuPlan !== null} onClose={() => setMenuPlan(null)} title={menuPlan?.title ?? ''}>
+      <Sheet
+        visible={menuPlan !== null}
+        onClose={() => setMenuPlan(null)}
+        title={menuPlan?.title ?? ''}
+      >
         {menuPlan ? (
           <View className="gap-1 pb-2">
             {canEditPlan(menuPlan) ? (
@@ -364,8 +438,16 @@ export default function MyTripsScreen() {
                   }}
                   className="flex-row items-center gap-3 rounded-xl px-2 py-3"
                 >
-                  <Icon name={action.icon} size={20} color={action.danger ? '#AD3232' : colors.primary} />
-                  <Text className={`text-[14px] font-semibold ${action.danger ? 'text-[#AD3232]' : 'text-[#13364A]'}`}>{action.label}</Text>
+                  <Icon
+                    name={action.icon}
+                    size={20}
+                    color={action.danger ? '#AD3232' : colors.primary}
+                  />
+                  <Text
+                    className={`text-[14px] font-semibold ${action.danger ? 'text-[#AD3232]' : 'text-[#13364A]'}`}
+                  >
+                    {action.label}
+                  </Text>
                 </Pressable>
               );
             })}

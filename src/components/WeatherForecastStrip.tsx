@@ -43,18 +43,39 @@ export default function WeatherForecastStrip({ itineraryId }: { itineraryId: num
 
   return (
     <View className="mt-4 rounded-2xl bg-white p-4">
-      <Text className="mb-2.5 text-[14px] font-extrabold text-[#13364A]">Dự báo thời tiết 7 ngày</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+      <Text className="mb-2.5 text-[14px] font-extrabold text-[#13364A]">
+        Dự báo thời tiết {daily.length} ngày
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8 }}
+      >
         {daily.map((day) => {
           const storm = isStormCode(day.weatherCode);
           return (
-            <View key={day.date} className={`w-[66px] items-center rounded-2xl py-2.5 ${storm ? 'bg-[#FDECEC]' : 'bg-[#F3F6FB]'}`}>
-              <Text className="text-[11px] font-bold text-[#5B6B7A]">{weekdayShortLabel(day.date)}</Text>
-              <Text className="text-[10px] text-[#8793AB]">{day.date.slice(8, 10)}/{day.date.slice(5, 7)}</Text>
-              <Icon name={weatherIconName(day.weatherCode)} size={22} color={storm ? '#C2410C' : '#3B6FD8'} />
-              <Text className="text-[12px] font-bold text-[#13364A]">{formatTemp(day.temperatureMax)}</Text>
+            <View
+              key={day.date}
+              className={`w-[66px] items-center rounded-2xl py-2.5 ${storm ? 'bg-[#FDECEC]' : 'bg-[#F3F6FB]'}`}
+            >
+              <Text className="text-[11px] font-bold text-[#5B6B7A]">
+                {weekdayShortLabel(day.date)}
+              </Text>
+              <Text className="text-[10px] text-[#8793AB]">
+                {day.date.slice(8, 10)}/{day.date.slice(5, 7)}
+              </Text>
+              <Icon
+                name={weatherIconName(day.weatherCode)}
+                size={22}
+                color={storm ? '#C2410C' : '#3B6FD8'}
+              />
+              <Text className="text-[12px] font-bold text-[#13364A]">
+                {formatTemp(day.temperatureMax)}
+              </Text>
               {day.precipitationProbabilityMax !== null && day.precipitationProbabilityMax > 0 ? (
-                <Text className="text-[10px] font-bold text-[#3B6FD8]">{day.precipitationProbabilityMax}%</Text>
+                <Text className="text-[10px] font-bold text-[#3B6FD8]">
+                  {day.precipitationProbabilityMax}%
+                </Text>
               ) : null}
             </View>
           );

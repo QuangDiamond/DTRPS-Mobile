@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, Pressable, View } from 'react-native';
 import { siteInfoApi, type SiteInfo } from '../api/siteInfoApi';
+import { useNotifications } from '../auth/NotificationsProvider';
 import { Icon, type IconName } from '../ui/Icon';
 import { Text } from '../ui/Typography';
 
@@ -10,7 +11,10 @@ type Announcement = NonNullable<SiteInfo['announcement']>;
 const DISMISS_KEY = 'smarttravel.dismissedAnnouncement';
 const POLL_MS = 5 * 60 * 1000;
 
-const STYLE: Record<Announcement['level'], { bg: string; border: string; fg: string; icon: IconName }> = {
+const STYLE: Record<
+  Announcement['level'],
+  { bg: string; border: string; fg: string; icon: IconName }
+> = {
   INFO: { bg: '#F0F9FF', border: '#BAE6FD', fg: '#0C4A6E', icon: 'info' },
   WARNING: { bg: '#FFFBEB', border: '#FDE68A', fg: '#78350F', icon: 'warning' },
   CRITICAL: { bg: '#E11D48', border: '#BE123C', fg: '#FFFFFF', icon: 'error' },
@@ -21,6 +25,7 @@ const STYLE: Record<Announcement['level'], { bg: string; border: string; fg: str
  * Mức Khẩn cấp không đóng được; mức khác đóng thì không hiện lại tới khi admin sửa nội dung.
  */
 export default function SiteAnnouncementBanner() {
+  const { version, lastEventType } = useNotifications();
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [dismissed, setDismissed] = useState<number | null>(null);
 
@@ -30,6 +35,13 @@ export default function SiteAnnouncementBanner() {
       .then((info) => setAnnouncement(info.announcement))
       .catch(() => undefined);
   }, []);
+
+  // Tự tải lại realtime ngay khi Admin thay đổi thông báo toàn hệ thống (giống Web)
+  useEffect(() => {
+    if (version > 0 && lastEventType?.startsWith('SITE_')) {
+      load();
+    }
+  }, [version, lastEventType, load]);
 
   useEffect(() => {
     SecureStore.getItemAsync(DISMISS_KEY)
@@ -65,7 +77,10 @@ export default function SiteAnnouncementBanner() {
 
   const style = STYLE[announcement.level];
   return (
-    <View style={{ backgroundColor: style.bg, borderColor: style.border }} className="mb-3 flex-row items-start gap-2.5 rounded-2xl border px-3.5 py-3">
+    <View
+      style={{ backgroundColor: style.bg, borderColor: style.border }}
+      className="mb-3 flex-row items-start gap-2.5 rounded-2xl border px-3.5 py-3"
+    >
       <Icon name={style.icon} size={19} color={style.fg} style={{ marginTop: 1 }} />
       <Text style={{ color: style.fg }} className="flex-1 text-[12.5px] font-semibold leading-5">
         {announcement.message}
@@ -74,7 +89,9 @@ export default function SiteAnnouncementBanner() {
         <Pressable
           onPress={() => {
             setDismissed(announcement.version);
-            SecureStore.setItemAsync(DISMISS_KEY, String(announcement.version)).catch(() => undefined);
+            SecureStore.setItemAsync(DISMISS_KEY, String(announcement.version)).catch(
+              () => undefined,
+            );
           }}
           hitSlop={8}
           accessibilityLabel="Đóng thông báo"

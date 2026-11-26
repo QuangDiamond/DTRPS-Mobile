@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../../ui/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { adApi, type FeaturedPlace } from '../../api/adApi';
@@ -17,6 +17,13 @@ import { useRootNav } from '../../navigation/hooks';
 import { colors, shadow } from '../../theme';
 import { Cover } from '../../ui/Bits';
 import { Icon, type IconName } from '../../ui/Icon';
+import {
+  FadeInView,
+  ScalePressable,
+  ShimmerBox,
+  ShineSweep,
+  SlideProgressBar,
+} from '../../ui/Motion';
 import { SectionTitle } from '../../ui/Screen';
 import { dayDiff, formatDate, todayIso } from '../../utils/format';
 import { takePendingOnboarding } from '../auth/onboardingFlag';
@@ -76,9 +83,17 @@ function FeaturedHero({ places }: { places: FeaturedPlace[] }) {
   const go = (next: number) => setIndex((next + places.length) % places.length);
 
   return (
-    <View style={[{ height: 360, borderRadius: 22, overflow: 'hidden', backgroundColor: '#0B2230' }, shadow.raised]}>
+    <View
+      style={[
+        { height: 360, borderRadius: 22, overflow: 'hidden', backgroundColor: '#0B2230' },
+        shadow.raised,
+      ]}
+    >
       {current.coverUrl ? (
-        <Image source={{ uri: current.coverUrl }} style={{ position: 'absolute', width: '100%', height: '100%' }} />
+        <Image
+          source={{ uri: current.coverUrl }}
+          style={{ position: 'absolute', width: '100%', height: '100%' }}
+        />
       ) : null}
       <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(3,22,30,0.45)' }]} />
 
@@ -94,64 +109,86 @@ function FeaturedHero({ places }: { places: FeaturedPlace[] }) {
         </View>
       </View>
 
-      <View className="absolute bottom-0 left-0 right-0 p-4">
-        <Text numberOfLines={1} className="text-[12px] font-semibold text-white/85">
-          {[current.category, current.province].filter(Boolean).join(' · ') || 'Địa điểm du lịch'}
-        </Text>
-        <Text numberOfLines={2} className="mt-1 text-[24px] font-extrabold leading-[32px] text-white">
-          {current.name}
-        </Text>
-        <View className="mt-3 flex-row flex-wrap items-center gap-2.5">
-          <View className="flex-row items-center gap-1 rounded-full bg-white/20 px-3 py-1.5">
-            <Icon name="star" size={15} color="#FFC94D" />
-            <Text className="text-[12px] font-bold text-white">
-              {current.rating !== null ? `${current.rating} (${current.reviewCount} đánh giá)` : 'Mới trên SmartTravel'}
+      <View className="absolute bottom-0 left-0 right-0">
+        <View className="p-4">
+          <FadeInView key={current.id} offset={6} duration={260}>
+            <Text numberOfLines={1} className="text-[12px] font-semibold text-white/85">
+              {[current.category, current.province].filter(Boolean).join(' · ') ||
+                'Địa điểm du lịch'}
             </Text>
+            <Text
+              numberOfLines={2}
+              className="mt-1 text-[24px] font-extrabold leading-[32px] text-white"
+            >
+              {current.name}
+            </Text>
+          </FadeInView>
+          <View className="mt-3 flex-row flex-wrap items-center gap-2.5">
+            <View className="flex-row items-center gap-1 rounded-full bg-white/20 px-3 py-1.5">
+              <Icon name="star" size={15} color="#FFC94D" />
+              <Text className="text-[12px] font-bold text-white">
+                {current.rating !== null
+                  ? `${current.rating} (${current.reviewCount} đánh giá)`
+                  : 'Mới trên SmartTravel'}
+              </Text>
+            </View>
+            <ScalePressable
+              scaleTo={0.95}
+              onPress={() => navigation.navigate('PlaceDetail', { placeId: current.id })}
+              className="flex-row items-center gap-1 rounded-full bg-white px-4 py-2"
+            >
+              <Text className="text-[12.5px] font-extrabold text-[#0E7490]">Khám phá ngay</Text>
+              <Icon name="arrow-forward" size={16} color={colors.primaryStrong} />
+            </ScalePressable>
           </View>
-          <Pressable
-            onPress={() => navigation.navigate('PlaceDetail', { placeId: current.id })}
-            className="flex-row items-center gap-1 rounded-full bg-white px-4 py-2"
-          >
-            <Text className="text-[12.5px] font-extrabold text-[#0E7490]">Khám phá ngay</Text>
-            <Icon name="arrow-forward" size={16} color={colors.primaryStrong} />
-          </Pressable>
+          {places.length > 1 ? (
+            /* Hàng dưới: chấm chuyển slide + nút dừng/trước/sau */
+            <View className="mt-3 flex-row items-center justify-between">
+              <View className="flex-row gap-1.5">
+                {places.map((place, i) => (
+                  <Pressable
+                    key={place.id}
+                    onPress={() => go(i)}
+                    accessibilityLabel={place.name}
+                    hitSlop={8}
+                    style={{
+                      height: 6,
+                      width: i === index ? 24 : 8,
+                      borderRadius: 3,
+                      backgroundColor: i === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)',
+                    }}
+                  />
+                ))}
+              </View>
+              <View className="flex-row gap-1.5">
+                {[
+                  {
+                    icon: stopped ? 'play-arrow' : 'pause',
+                    label: stopped ? 'Tiếp tục tự chuyển' : 'Dừng tự chuyển',
+                    onPress: () => setStopped((v) => !v),
+                  },
+                  { icon: 'chevron-left', label: 'Đối tác trước', onPress: () => go(index - 1) },
+                  {
+                    icon: 'chevron-right',
+                    label: 'Đối tác tiếp theo',
+                    onPress: () => go(index + 1),
+                  },
+                ].map((button) => (
+                  <Pressable
+                    key={button.label}
+                    onPress={button.onPress}
+                    accessibilityLabel={button.label}
+                    className="h-8 w-8 items-center justify-center rounded-full bg-black/40"
+                  >
+                    <Icon name={button.icon as IconName} size={19} color="#FFFFFF" />
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
         </View>
         {places.length > 1 ? (
-          /* Hàng dưới: chấm chuyển slide + nút dừng/trước/sau */
-          <View className="mt-3 flex-row items-center justify-between">
-            <View className="flex-row gap-1.5">
-              {places.map((place, i) => (
-                <Pressable
-                  key={place.id}
-                  onPress={() => go(i)}
-                  accessibilityLabel={place.name}
-                  hitSlop={8}
-                  style={{
-                    height: 6,
-                    width: i === index ? 24 : 8,
-                    borderRadius: 3,
-                    backgroundColor: i === index ? '#FFFFFF' : 'rgba(255,255,255,0.45)',
-                  }}
-                />
-              ))}
-            </View>
-            <View className="flex-row gap-1.5">
-              {[
-                { icon: stopped ? 'play-arrow' : 'pause', label: stopped ? 'Tiếp tục tự chuyển' : 'Dừng tự chuyển', onPress: () => setStopped((v) => !v) },
-                { icon: 'chevron-left', label: 'Đối tác trước', onPress: () => go(index - 1) },
-                { icon: 'chevron-right', label: 'Đối tác tiếp theo', onPress: () => go(index + 1) },
-              ].map((button) => (
-                <Pressable
-                  key={button.label}
-                  onPress={button.onPress}
-                  accessibilityLabel={button.label}
-                  className="h-8 w-8 items-center justify-center rounded-full bg-black/40"
-                >
-                  <Icon name={button.icon as IconName} size={19} color="#FFFFFF" />
-                </Pressable>
-              ))}
-            </View>
-          </View>
+          <SlideProgressBar durationMs={ROTATE_MS} activeKey={index} paused={stopped} />
         ) : null}
       </View>
     </View>
@@ -215,7 +252,9 @@ function UpcomingTrip() {
           onPress={() => (user ? navigation.navigate('PlanTrip') : navigation.navigate('Login'))}
           className="mt-4 flex-row items-center gap-1.5 self-start rounded-full bg-[#0891B2] px-5 py-2.5"
         >
-          <Text className="text-[12.5px] font-bold text-white">{user ? 'Tạo chuyến đi' : 'Đăng nhập'}</Text>
+          <Text className="text-[12.5px] font-bold text-white">
+            {user ? 'Tạo chuyến đi' : 'Đăng nhập'}
+          </Text>
           <Icon name="arrow-forward" size={17} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -277,14 +316,17 @@ function UpcomingTrip() {
             <Text className="text-[13px] text-[#557080]"> ngày nữa</Text>
           </Text>
         )}
-        <Pressable
+        <ScalePressable
+          scaleTo={0.94}
           disabled={opening}
           onPress={() => void open(plan)}
           className="flex-row items-center gap-1.5 rounded-full bg-[#0891B2] px-4 py-2.5"
         >
-          <Text className="text-[12.5px] font-bold text-white">{opening ? 'Đang mở…' : 'Xem chuyến đi'}</Text>
+          <Text className="text-[12.5px] font-bold text-white">
+            {opening ? 'Đang mở…' : 'Xem chuyến đi'}
+          </Text>
           <Icon name="arrow-forward" size={17} color="#FFFFFF" />
-        </Pressable>
+        </ScalePressable>
       </View>
     </View>
   );
@@ -300,6 +342,39 @@ export default function HomeScreen() {
   const [loadingRecent, setLoadingRecent] = useState(true);
   const [placeTotal, setPlaceTotal] = useState<number | null>(null);
   const [provinceCount, setProvinceCount] = useState<number | null>(null);
+  const bellShake = useRef(new Animated.Value(0)).current;
+  const badgePop = useRef(new Animated.Value(1)).current;
+  const prevUnreadRef = useRef(unread);
+
+  // Chuông rung lắc + chấm đỏ nảy mỗi khi có thông báo mới đổ về realtime
+  useEffect(() => {
+    if (unread > prevUnreadRef.current) {
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(bellShake, { toValue: 1, duration: 75, useNativeDriver: true }),
+          Animated.timing(bellShake, { toValue: -1, duration: 90, useNativeDriver: true }),
+          Animated.timing(bellShake, { toValue: 0.7, duration: 80, useNativeDriver: true }),
+          Animated.timing(bellShake, { toValue: -0.7, duration: 80, useNativeDriver: true }),
+          Animated.timing(bellShake, { toValue: 0, duration: 75, useNativeDriver: true }),
+        ]),
+        Animated.sequence([
+          Animated.timing(badgePop, { toValue: 1.38, duration: 130, useNativeDriver: true }),
+          Animated.spring(badgePop, {
+            toValue: 1,
+            useNativeDriver: true,
+            speed: 24,
+            bounciness: 10,
+          }),
+        ]),
+      ]).start();
+    }
+    prevUnreadRef.current = unread;
+  }, [unread, bellShake, badgePop]);
+
+  const bellRotate = bellShake.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-16deg', '16deg'],
+  });
 
   // Lần đăng nhập đầu tiên sau khi đăng ký → trả lời câu hỏi sở thích trước
   useEffect(() => {
@@ -336,14 +411,21 @@ export default function HomeScreen() {
   }, []);
 
   const stats = [
-    placeTotal !== null ? { icon: 'place' as IconName, value: `${placeTotal}+`, label: 'địa điểm' } : null,
-    provinceCount !== null ? { icon: 'map' as IconName, value: String(provinceCount), label: 'tỉnh thành' } : null,
+    placeTotal !== null
+      ? { icon: 'place' as IconName, value: `${placeTotal}+`, label: 'địa điểm' }
+      : null,
+    provinceCount !== null
+      ? { icon: 'map' as IconName, value: String(provinceCount), label: 'tỉnh thành' }
+      : null,
     { icon: 'auto-awesome' as IconName, value: 'AI', label: 'gợi ý' },
   ].filter((item): item is { icon: IconName; value: string; label: string } => item !== null);
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+        keyboardShouldPersistTaps="handled"
+      >
         <SiteAnnouncementBanner />
 
         {/* HERO giống web: lời chào, tìm kiếm, lập kế hoạch + quảng cáo đối tác trong cùng khung xanh */}
@@ -351,23 +433,36 @@ export default function HomeScreen() {
           <View className="absolute -left-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
           <View className="absolute -bottom-28 -right-16 h-80 w-80 rounded-full bg-[#2FBAC9]/20" />
           <View className="flex-row items-center justify-between gap-3">
-            <Text numberOfLines={1} className="flex-shrink rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white">
+            <Text
+              numberOfLines={1}
+              className="flex-shrink rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white"
+            >
               Xin chào, {user?.name ?? 'bạn'} 👋
             </Text>
-            <Pressable
+            <ScalePressable
+              scaleTo={0.9}
               onPress={() =>
-                user ? navigation.navigate('Notifications') : navigation.navigate('Login', { notice: 'Đăng nhập để nhận thông báo' })
+                user
+                  ? navigation.navigate('Notifications')
+                  : navigation.navigate('Login', { notice: 'Đăng nhập để nhận thông báo' })
               }
               accessibilityLabel={unread > 0 ? `Thông báo, ${unread} chưa đọc` : 'Thông báo'}
               className="h-10 w-10 items-center justify-center rounded-full bg-white/15"
             >
-              <Icon name="notifications" size={21} color="#FFFFFF" />
+              <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+                <Icon name="notifications" size={21} color="#FFFFFF" />
+              </Animated.View>
               {unread > 0 ? (
-                <View className="absolute -right-0.5 -top-0.5 min-w-[18px] items-center rounded-full bg-[#E5484D] px-1">
-                  <Text className="text-[10px] font-extrabold text-white">{unread > 99 ? '99+' : unread}</Text>
-                </View>
+                <Animated.View
+                  style={{ transform: [{ scale: badgePop }] }}
+                  className="absolute -right-0.5 -top-0.5 min-w-[18px] items-center rounded-full bg-[#E5484D] px-1"
+                >
+                  <Text className="text-[10px] font-extrabold text-white">
+                    {unread > 99 ? '99+' : unread}
+                  </Text>
+                </Animated.View>
               ) : null}
-            </Pressable>
+            </ScalePressable>
           </View>
           <Text className="mt-3 text-[27px] font-extrabold leading-[33px] text-white">
             Việt Nam theo cách{'\n'}
@@ -379,20 +474,25 @@ export default function HomeScreen() {
           </Text>
           <PlaceSearch />
           <View className="mt-4 flex-row flex-wrap gap-2.5">
-            <Pressable
-              onPress={() => (user ? navigation.navigate('PlanTrip') : navigation.navigate('Login'))}
-              className="flex-row items-center gap-1.5 rounded-full bg-white px-4 py-2.5"
+            <ScalePressable
+              scaleTo={0.95}
+              onPress={() =>
+                user ? navigation.navigate('PlanTrip') : navigation.navigate('Login')
+              }
+              className="flex-row items-center gap-1.5 overflow-hidden rounded-full bg-white px-4 py-2.5"
             >
+              <ShineSweep />
               <Icon name="auto-awesome" size={17} color={colors.primaryStrong} />
               <Text className="text-[13px] font-extrabold text-[#0E7490]">Lập kế hoạch với AI</Text>
-            </Pressable>
-            <Pressable
+            </ScalePressable>
+            <ScalePressable
+              scaleTo={0.95}
               onPress={() => navigation.navigate('Tabs', { screen: 'Explore' })}
               className="flex-row items-center gap-1.5 rounded-full border border-white/40 px-4 py-2.5"
             >
               <Text className="text-[13px] font-bold text-white">Khám phá</Text>
               <Icon name="arrow-forward" size={17} color="#FFFFFF" />
-            </Pressable>
+            </ScalePressable>
           </View>
           <View className="mt-5 flex-row flex-wrap gap-x-5 gap-y-2">
             {stats.map((stat) => (
@@ -419,17 +519,22 @@ export default function HomeScreen() {
             <View className="h-12 w-12 items-center justify-center rounded-2xl bg-white">
               <Icon name="person-pin-circle" size={26} color={colors.gold} />
             </View>
-            <Text className="mt-4 text-[17px] font-extrabold text-[#0F2A3B]">Hoàn thiện sở thích du lịch</Text>
+            <Text className="mt-4 text-[17px] font-extrabold text-[#0F2A3B]">
+              Hoàn thiện sở thích du lịch
+            </Text>
             <Text className="mt-1 text-[12.5px] leading-5 text-[#6B5A35]">
               Càng hiểu bạn, gợi ý càng sát: chế độ ăn, người đi cùng, nhu cầu đặc biệt…
             </Text>
-            <Pressable
-              onPress={() => (user ? navigation.navigate('Preferences') : navigation.navigate('Login'))}
+            <ScalePressable
+              scaleTo={0.95}
+              onPress={() =>
+                user ? navigation.navigate('Preferences') : navigation.navigate('Login')
+              }
               className="mt-4 flex-row items-center gap-1.5 self-start rounded-full bg-[#0F2A3B] px-5 py-2.5"
             >
               <Text className="text-[12.5px] font-bold text-white">Thiết lập sở thích</Text>
               <Icon name="arrow-forward" size={17} color="#FFFFFF" />
-            </Pressable>
+            </ScalePressable>
           </View>
         </View>
 
@@ -440,24 +545,33 @@ export default function HomeScreen() {
               eyebrow="Vừa cập nhật"
               title="Mới có trên SmartTravel"
               action={
-                <Pressable onPress={() => navigation.navigate('Tabs', { screen: 'Explore' })} hitSlop={8}>
+                <ScalePressable
+                  scaleTo={0.93}
+                  onPress={() => navigation.navigate('Tabs', { screen: 'Explore' })}
+                  hitSlop={8}
+                >
                   <Text className="text-[13px] font-bold text-[#0891B2]">Xem tất cả</Text>
-                </Pressable>
+                </ScalePressable>
               }
             />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 4 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+            >
               {loadingRecent
                 ? Array.from({ length: 3 }, (_, i) => (
                     <View key={i} className="w-[220px] overflow-hidden rounded-[20px] bg-white">
-                      <View className="h-[140px] bg-[#E6F4F7]" />
+                      <ShimmerBox height={140} borderRadius={0} />
                       <View className="gap-2 p-3">
-                        <View className="h-3.5 w-3/4 rounded-full bg-[#EEF6F8]" />
-                        <View className="h-3 w-1/2 rounded-full bg-[#EEF6F8]" />
+                        <ShimmerBox width="75%" height={14} borderRadius={7} />
+                        <ShimmerBox width="50%" height={12} borderRadius={6} />
                       </View>
                     </View>
                   ))
                 : recent.map((place) => (
-                    <Pressable
+                    <ScalePressable
+                      scaleTo={0.97}
                       key={place.id}
                       onPress={() => navigation.navigate('PlaceDetail', { placeId: place.id })}
                       style={shadow.card}
@@ -475,7 +589,7 @@ export default function HomeScreen() {
                           </Text>
                         </View>
                       </View>
-                    </Pressable>
+                    </ScalePressable>
                   ))}
             </ScrollView>
           </View>
@@ -483,8 +597,12 @@ export default function HomeScreen() {
 
         {/* Cách hoạt động */}
         <View style={shadow.card} className="mt-8 rounded-3xl bg-white p-5">
-          <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.6px] text-[#0891B2]">Cách hoạt động</Text>
-          <Text className="mt-1 text-[19px] font-extrabold text-[#0F2A3B]">Lịch trình hoàn chỉnh chỉ với 3 bước</Text>
+          <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.6px] text-[#0891B2]">
+            Cách hoạt động
+          </Text>
+          <Text className="mt-1 text-[19px] font-extrabold text-[#0F2A3B]">
+            Lịch trình hoàn chỉnh chỉ với 3 bước
+          </Text>
           <View className="mt-4 gap-3">
             {STEPS.map((step, i) => (
               <View key={step.title} className="flex-row gap-3 rounded-2xl bg-[#F3FBFC] p-4">
