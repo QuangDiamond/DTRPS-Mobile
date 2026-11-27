@@ -1,4 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
+import { API_URL } from '../api/config';
+import { getSessionAccessToken } from '../api/http';
+import { syncBackgroundNotifications } from './localNotification';
 
 export interface AppSettings {
   pushNotification: boolean;
@@ -35,6 +38,10 @@ export async function loadAppSettings(): Promise<AppSettings> {
 
 export async function saveAppSettings(next: AppSettings): Promise<void> {
   cached = next;
+  const token = getSessionAccessToken();
+  if (token) {
+    syncBackgroundNotifications(API_URL, token, next);
+  }
   try {
     await SecureStore.setItemAsync(SETTINGS_STORAGE_KEY, JSON.stringify(next));
   } catch {

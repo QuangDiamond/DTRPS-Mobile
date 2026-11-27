@@ -12,8 +12,14 @@ import { AppState } from 'react-native';
 import { API_URL } from '../api/config';
 import { getSessionAccessToken, refreshSessionToken } from '../api/http';
 import { notificationApi } from '../api/notificationApi';
-import { loadAppSettings, shouldAlertForType } from '../utils/appSettings';
-import { requestNotificationPermission, showLocalNotification } from '../utils/localNotification';
+import { getCachedAppSettings, loadAppSettings, shouldAlertForType } from '../utils/appSettings';
+import {
+  clearBackgroundNotifications,
+  markSeenNotificationId,
+  requestNotificationPermission,
+  showLocalNotification,
+  syncBackgroundNotifications,
+} from '../utils/localNotification';
 import { useAuth } from './AuthProvider';
 
 const FALLBACK_POLL_MS = 60_000;
@@ -82,10 +88,14 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     if (!user) {
       setUnread(0);
       dismissBanner();
+      clearBackgroundNotifications();
       return;
     }
 
-    void loadAppSettings();
+    void loadAppSettings().then((settings) => {
+      const token = getSessionAccessToken();
+      if (token) syncBackgroundNotifications(API_URL, token, settings);
+    });
     void requestNotificationPermission();
     refresh();
 
@@ -111,6 +121,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         // banner nổi + thanh trạng thái tôn trọng công tắc trong Cài đặt ứng dụng.
         if (parsed.notificationId != null && parsed.title) {
           setUnread((count) => count + 1);
+          markSeenNotificationId(parsed.notificationId);
           if (shouldAlertForType(parsed.type)) {
             const nextBanner: LiveNoticeBanner = {
               id: parsed.notificationId,
@@ -157,6 +168,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
         token = getSessionAccessToken();
         if (!token) return;
       }
+      syncBackgroundNotifications(API_URL, token, getCachedAppSettings());
 
       const request = new XMLHttpRequest();
       xhr = request;

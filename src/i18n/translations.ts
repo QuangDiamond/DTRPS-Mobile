@@ -315,6 +315,8 @@ const EXACT_VI_TO_EN: Record<string, string> = {
   'Ngôn ngữ': 'Language',
   'Chọn ngôn ngữ hiển thị cho ứng dụng': 'Choose display language for the app',
   'THÔNG BÁO & QUYỀN ỨNG DỤNG': 'NOTIFICATIONS & PERMISSIONS',
+  'Bật thông báo': 'Enable notifications',
+  'Hiện thông báo nổi & trên thanh trạng thái': 'Show banners & status-bar alerts',
   'Thông báo đẩy': 'Push notifications',
   'Cập nhật quan trọng về tài khoản': 'Important account & trip updates',
   'Nhắc lịch trình': 'Trip reminders',

@@ -106,9 +106,10 @@ export default function SettingsScreen({ navigation }: RootScreenProps<'Settings
     void saveAppSettings(next);
   };
 
-  const toggle = (key: keyof AppSettings) => (
+  const toggle = (key: keyof AppSettings, disabled = false) => (
     <Switch
-      value={settings[key]}
+      value={disabled ? false : settings[key]}
+      disabled={disabled}
       onValueChange={(value) => update(key, value)}
       trackColor={{ true: colors.primary, false: '#D5D8E0' }}
       thumbColor="#FFFFFF"
@@ -218,22 +219,24 @@ export default function SettingsScreen({ navigation }: RootScreenProps<'Settings
       <Section title="THÔNG BÁO & QUYỀN ỨNG DỤNG">
         <Row
           icon="notifications-active"
-          title="Thông báo đẩy"
-          subtitle="Cập nhật quan trọng về tài khoản"
+          title="Bật thông báo"
+          subtitle="Hiện thông báo nổi & trên thanh trạng thái"
           right={toggle('pushNotification')}
         />
-        <Row
-          icon="alarm"
-          title="Nhắc lịch trình"
-          subtitle="Nhắc trước ngày khởi hành & đánh giá chuyến"
-          right={toggle('tripReminder')}
-        />
-        <Row
-          icon="thunderstorm"
-          title="Cảnh báo thời tiết"
-          subtitle="Khi thời tiết ảnh hưởng lịch trình"
-          right={toggle('weatherNotification')}
-        />
+        <View style={{ opacity: settings.pushNotification ? 1 : 0.45 }}>
+          <Row
+            icon="alarm"
+            title="Nhắc lịch trình"
+            subtitle="Nhắc trước ngày khởi hành & đánh giá chuyến"
+            right={toggle('tripReminder', !settings.pushNotification)}
+          />
+          <Row
+            icon="thunderstorm"
+            title="Cảnh báo thời tiết"
+            subtitle="Khi thời tiết ảnh hưởng lịch trình"
+            right={toggle('weatherNotification', !settings.pushNotification)}
+          />
+        </View>
         <Row
           icon="admin-panel-settings"
           title="Quyền ứng dụng (GPS & Thông báo)"
