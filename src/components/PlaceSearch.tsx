@@ -80,6 +80,7 @@ export default function PlaceSearch() {
           onChangeText={setQuery}
           placeholder="Tìm địa điểm, ví dụ: Chùa Hương, Hồ Tây…"
           placeholderTextColor="#87918F"
+          numberOfLines={1}
           returnKeyType="search"
           style={{ flex: 1, height: 48, marginLeft: 8, fontSize: 13.5, color: colors.ink }}
         />

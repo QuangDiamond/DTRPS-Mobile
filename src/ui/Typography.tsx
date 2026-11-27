@@ -1,5 +1,5 @@
 import { cssInterop } from 'nativewind';
-import { createContext, forwardRef, useContext } from 'react';
+import { createContext, forwardRef, useContext, type ReactNode } from 'react';
 import {
   StyleSheet,
   Text as RNText,
@@ -8,6 +8,7 @@ import {
   type TextProps,
   type TextStyle,
 } from 'react-native';
+import { useI18n } from '../i18n/I18nProvider';
 
 /**
  * Font chữ dùng chung với web du khách: Be Vietnam Pro (--font-sans của web).
@@ -22,7 +23,8 @@ export const FONT_FILES = {
 } as const;
 
 function familyFor(weight: TextStyle['fontWeight']): string {
-  const value = weight === 'bold' ? 700 : weight === 'normal' || weight === undefined ? 400 : Number(weight);
+  const value =
+    weight === 'bold' ? 700 : weight === 'normal' || weight === undefined ? 400 : Number(weight);
   if (!Number.isFinite(value) || value < 450) return FONT_FILES[400];
   if (value < 550) return FONT_FILES[500];
   if (value < 650) return FONT_FILES[600];
@@ -40,17 +42,47 @@ function withFont(style: TextProps['style'], nested: boolean): TextProps['style'
   return { ...flat, fontFamily: familyFor(flat.fontWeight), fontWeight: 'normal' };
 }
 
-export const Text = forwardRef<RNText, TextProps>(function Text({ style, ...props }, ref) {
+function translateChildren(children: ReactNode, t: (s: string) => string): ReactNode {
+  if (typeof children === 'string') return t(children);
+  if (Array.isArray(children)) {
+    // Ghép chuỗi thuần (vd. "Xin chào, ", name, " 👋") để dịch đúng ngữ cảnh
+    if (children.every((part) => typeof part === 'string' || typeof part === 'number')) {
+      return t(children.map(String).join(''));
+    }
+    return children.map((part) => (typeof part === 'string' ? t(part) : part));
+  }
+  return children;
+}
+
+export const Text = forwardRef<RNText, TextProps>(function Text(
+  { style, children, ...props },
+  ref,
+) {
   const nested = useContext(InsideText);
+  const { lang, t } = useI18n();
+  const rendered = lang === 'en' ? translateChildren(children, t) : children;
   return (
     <InsideText.Provider value>
-      <RNText ref={ref} {...props} style={withFont(style, nested)} />
+      <RNText ref={ref} {...props} style={withFont(style, nested)}>
+        {rendered}
+      </RNText>
     </InsideText.Provider>
   );
 });
 
-export const TextInput = forwardRef<RNTextInput, TextInputProps>(function TextInput({ style, ...props }, ref) {
-  return <RNTextInput ref={ref} {...props} style={withFont(style, false)} />;
+export const TextInput = forwardRef<RNTextInput, TextInputProps>(function TextInput(
+  { style, placeholder, ...props },
+  ref,
+) {
+  const { lang, t } = useI18n();
+  return (
+    <RNTextInput
+      ref={ref}
+      {...props}
+      placeholder={lang === 'en' && placeholder ? t(placeholder) : placeholder}
+      style={withFont(style, false)}
+    />
+  );
 });
 
 // className (NativeWind) → style trước khi tới component, để đọc được font-bold / font-extrabold…

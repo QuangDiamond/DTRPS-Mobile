@@ -15,6 +15,7 @@ import { AuthProvider } from './src/auth/AuthProvider';
 import { FavoritesProvider } from './src/auth/FavoritesProvider';
 import { NotificationsProvider } from './src/auth/NotificationsProvider';
 import LiveNotificationBanner from './src/components/LiveNotificationBanner';
+import { I18nProvider } from './src/i18n/I18nProvider';
 import RootNavigator from './src/navigation/RootNavigator';
 import { colors } from './src/theme';
 
@@ -49,17 +50,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <NotificationsProvider>
-          <NavigationContainer>
-            <FavoritesProvider>
-              <StatusBar style="dark" />
-              <RootNavigator />
-              <LiveNotificationBanner />
-            </FavoritesProvider>
-          </NavigationContainer>
-        </NotificationsProvider>
-      </AuthProvider>
+      <I18nProvider>
+        <AuthProvider>
+          <NotificationsProvider>
+            <NavigationContainer>
+              <FavoritesProvider>
+                <StatusBar style="dark" />
+                <RootNavigator />
+                <LiveNotificationBanner />
+              </FavoritesProvider>
+            </NavigationContainer>
+          </NotificationsProvider>
+        </AuthProvider>
+      </I18nProvider>
     </SafeAreaProvider>
   );
 }

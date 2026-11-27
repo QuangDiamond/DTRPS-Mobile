@@ -9,17 +9,17 @@ import { Icon, type IconName } from '../ui/Icon';
 import { Text } from '../ui/Typography';
 
 function iconFor(type: string): { name: IconName; bg: string; fg: string } {
-  if (type.startsWith('WEATHER_SEVERE')) {
+  if (/^(TRIP_)?WEATHER_SEVERE$/.test(type)) {
     return { name: 'thunderstorm', bg: '#FEE2E2', fg: '#DC2626' };
   }
-  if (type.startsWith('WEATHER_')) {
+  if (/^(TRIP_)?WEATHER_/.test(type)) {
     return { name: 'umbrella', bg: '#FEF3C7', fg: '#D97706' };
+  }
+  if (type === 'TRIP_REVIEW_REMINDER' || type.includes('REVIEW')) {
+    return { name: 'rate-review', bg: '#DCFCE7', fg: '#16A34A' };
   }
   if (type.startsWith('TRIP_')) {
     return { name: 'luggage', bg: '#E0F2FE', fg: '#0284C7' };
-  }
-  if (type.includes('REVIEW')) {
-    return { name: 'rate-review', bg: '#DCFCE7', fg: '#16A34A' };
   }
   return { name: 'notifications-active', bg: '#ECFEFF', fg: colors.primary };
 }

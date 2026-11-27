@@ -13,6 +13,7 @@ import { useAuth } from '../../auth/AuthProvider';
 import PlaceSearch from '../../components/PlaceSearch';
 import SiteAnnouncementBanner from '../../components/SiteAnnouncementBanner';
 import { useNotifications } from '../../auth/NotificationsProvider';
+import { useI18n } from '../../i18n/I18nProvider';
 import { useRootNav } from '../../navigation/hooks';
 import { colors, shadow } from '../../theme';
 import { Cover } from '../../ui/Bits';
@@ -336,6 +337,7 @@ function UpcomingTrip() {
 export default function HomeScreen() {
   const { user } = useAuth();
   const { unread } = useNotifications();
+  const { lang, toggleLang } = useI18n();
   const navigation = useRootNav();
   const [featured, setFeatured] = useState<FeaturedPlace[]>([]);
   const [recent, setRecent] = useState<PlaceSummary[]>([]);
@@ -344,7 +346,22 @@ export default function HomeScreen() {
   const [provinceCount, setProvinceCount] = useState<number | null>(null);
   const bellShake = useRef(new Animated.Value(0)).current;
   const badgePop = useRef(new Animated.Value(1)).current;
+  const langSlide = useRef(new Animated.Value(lang === 'en' ? 1 : 0)).current;
   const prevUnreadRef = useRef(unread);
+
+  useEffect(() => {
+    Animated.spring(langSlide, {
+      toValue: lang === 'en' ? 1 : 0,
+      useNativeDriver: true,
+      speed: 24,
+      bounciness: 6,
+    }).start();
+  }, [lang, langSlide]);
+
+  const langThumbX = langSlide.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 30],
+  });
 
   // Chuông rung lắc + chấm đỏ nảy mỗi khi có thông báo mới đổ về realtime
   useEffect(() => {
@@ -432,37 +449,92 @@ export default function HomeScreen() {
         <View className="overflow-hidden rounded-[28px] bg-[#0891B2] p-5">
           <View className="absolute -left-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
           <View className="absolute -bottom-28 -right-16 h-80 w-80 rounded-full bg-[#2FBAC9]/20" />
-          <View className="flex-row items-center justify-between gap-3">
+          <View className="flex-row items-center justify-between gap-2">
             <Text
               numberOfLines={1}
               className="flex-shrink rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white"
             >
               Xin chào, {user?.name ?? 'bạn'} 👋
             </Text>
-            <ScalePressable
-              scaleTo={0.9}
-              onPress={() =>
-                user
-                  ? navigation.navigate('Notifications')
-                  : navigation.navigate('Login', { notice: 'Đăng nhập để nhận thông báo' })
-              }
-              accessibilityLabel={unread > 0 ? `Thông báo, ${unread} chưa đọc` : 'Thông báo'}
-              className="h-10 w-10 items-center justify-center rounded-full bg-white/15"
-            >
-              <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
-                <Icon name="notifications" size={21} color="#FFFFFF" />
-              </Animated.View>
-              {unread > 0 ? (
+            <View className="flex-row items-center gap-2">
+              <ScalePressable
+                scaleTo={0.93}
+                onPress={toggleLang}
+                accessibilityLabel={lang === 'vi' ? 'Switch to English' : 'Chuyển sang Tiếng Việt'}
+                style={{
+                  position: 'relative',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  height: 34,
+                  width: 66,
+                  borderRadius: 17,
+                  padding: 3,
+                  backgroundColor: 'rgba(255,255,255,0.18)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.28)',
+                }}
+              >
                 <Animated.View
-                  style={{ transform: [{ scale: badgePop }] }}
-                  className="absolute -right-0.5 -top-0.5 min-w-[18px] items-center rounded-full bg-[#E5484D] px-1"
-                >
-                  <Text className="text-[10px] font-extrabold text-white">
-                    {unread > 99 ? '99+' : unread}
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    left: 3,
+                    top: 3,
+                    width: 28,
+                    height: 26,
+                    borderRadius: 13,
+                    backgroundColor: '#FFFFFF',
+                    transform: [{ translateX: langThumbX }],
+                  }}
+                />
+                <View style={{ width: 30, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: '800',
+                      color: lang === 'vi' ? '#0E7490' : 'rgba(255,255,255,0.85)',
+                    }}
+                  >
+                    VI
                   </Text>
+                </View>
+                <View style={{ width: 30, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: '800',
+                      color: lang === 'en' ? '#0E7490' : 'rgba(255,255,255,0.85)',
+                    }}
+                  >
+                    EN
+                  </Text>
+                </View>
+              </ScalePressable>
+              <ScalePressable
+                scaleTo={0.9}
+                onPress={() =>
+                  user
+                    ? navigation.navigate('Notifications')
+                    : navigation.navigate('Login', { notice: 'Đăng nhập để nhận thông báo' })
+                }
+                accessibilityLabel={unread > 0 ? `Thông báo, ${unread} chưa đọc` : 'Thông báo'}
+                className="h-10 w-10 items-center justify-center rounded-full bg-white/15"
+              >
+                <Animated.View style={{ transform: [{ rotate: bellRotate }] }}>
+                  <Icon name="notifications" size={21} color="#FFFFFF" />
                 </Animated.View>
-              ) : null}
-            </ScalePressable>
+                {unread > 0 ? (
+                  <Animated.View
+                    style={{ transform: [{ scale: badgePop }] }}
+                    className="absolute -right-0.5 -top-0.5 min-w-[18px] items-center rounded-full bg-[#E5484D] px-1"
+                  >
+                    <Text className="text-[10px] font-extrabold text-white">
+                      {unread > 99 ? '99+' : unread}
+                    </Text>
+                  </Animated.View>
+                ) : null}
+              </ScalePressable>
+            </View>
           </View>
           <Text className="mt-3 text-[27px] font-extrabold leading-[33px] text-white">
             Việt Nam theo cách{'\n'}
